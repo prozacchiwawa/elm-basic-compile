@@ -46,6 +46,7 @@ Executable elm-basic-compile
         ansi-terminal,
         ansi-wl-pprint,
         base >=4.2 && <5,
+        base64-bytestring,
         binary,
         blaze-html,
         blaze-markup,
