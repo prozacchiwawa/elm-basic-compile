@@ -1,11 +1,13 @@
 {-# OPTIONS_GHC -Wall #-}
 module Main where
 
+import qualified Data.List
+import qualified Data.Map as Map
+import qualified Data.Text.Lazy
+
 import Elm.Compiler
 import Elm.Package
 import Elm.Compiler.Module
-import qualified Data.Map as Map
-import qualified Data.Text.Lazy
 --import AST.Declaration
 --import AST.Variable
 --import AST.Module
@@ -80,10 +82,11 @@ compile :: Context -> String -> Elm.Package.Interfaces -> *stuff* :-)
 
 main :: IO ()
 main =
-    let context = Context { _packageName = Name { user = "elm-lang", project = "test" } } in
-    let (localizer, warnings, result) = Elm.Compiler.compile context "module Test exposing (..)\n\nx = 3" Map.empty in
+    let source = "module Test exposing (..)\n\nx = 3" in
+    let context = Context { _packageName = Name { user = "elm-lang", project = "test" }, _isExposed = True, _dependencies = [] } in
+    let (localizer, warnings, result) = Elm.Compiler.compile context source Map.empty in
     case result of
         Left e ->
-            putStrLn "error"
-        Right r ->
-            putStrLn (r._js)
+            putStrLn (Data.List.intercalate "\n" (map (Elm.Compiler.errorToString localizer "" source) e))
+        Right (Result docs interface js) ->
+            putStrLn (Data.Text.Lazy.unpack js)
