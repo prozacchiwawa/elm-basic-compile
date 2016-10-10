@@ -1,13 +1,16 @@
 {-# OPTIONS_GHC -Wall #-}
 module Main where
 
-import qualified Data.List
+import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Text.Lazy
+import Control.Monad (mapM)
 
 import Elm.Compiler
 import Elm.Package
 import Elm.Compiler.Module
+
+import qualified Utils.File
 --import AST.Declaration
 --import AST.Variable
 --import AST.Module
@@ -82,11 +85,33 @@ compile :: Context -> String -> Elm.Package.Interfaces -> *stuff* :-)
 
 main :: IO ()
 main =
+    -- Grab the package version so we can lookup the built modules according to compiler version
+    let (Version major minor patch) = Elm.Compiler.version in
+    let versionString = List.intercalate "." (map show [major,minor,patch]) in
+    -- Some source code to compile for now
     let source = "module Test exposing (..)\n\nx = 3" in
-    let context = Context { _packageName = Name { user = "elm-lang", project = "test" }, _isExposed = True, _dependencies = [] } in
-    let (localizer, warnings, result) = Elm.Compiler.compile context source Map.empty in
-    case result of
-        Left e ->
-            putStrLn (Data.List.intercalate "\n" (map (Elm.Compiler.errorToString localizer "" source) e))
-        Right (Result docs interface js) ->
-            putStrLn (Data.Text.Lazy.unpack js)
+    -- The repository that elm-lang lives in
+    let elmCore = Name { user = "elm-lang", project = "core" } in
+    -- Modules matched to the default imports
+    let importModules = [["Basics"], ["Debug"], ["List"], ["Maybe"], ["Result"], ["Platform"], ["Platform", "Cmd"], ["Platform", "Sub"]] in
+    -- Make a list of the names of modules we need to import
+    let canonicalNames = map (\n -> Elm.Compiler.Module.Canonical elmCore n) importModules in
+    -- A compiler context indicating that we need to import at least the default modules
+    let context = Context { _packageName = Name { user = "elm-lang", project = "test" }, _isExposed = False, _dependencies = canonicalNames } in
+    -- A function to make the hyphenated version of a package name as in build-artifacts
+    let hyphenate rawName = List.intercalate "-" rawName in
+    let fileName (Elm.Compiler.Module.Canonical (Name user project) modPath) = List.intercalate "/" ["elm-stuff", "build-artifacts", versionString, user, project, "4.0.0", (hyphenate modPath) ++ ".elmi"] in
+    let readInterface name = do
+            filename <- pure $ fileName name
+            interface <- Utils.File.readBinary filename
+            return (name, interface)
+    in
+    do
+        interfaces <- mapM readInterface canonicalNames
+        interfaceMap <- pure $ Map.fromList interfaces
+        (localizer, warnings, result) <- pure (Elm.Compiler.compile context source interfaceMap)
+        case result of
+            Left e ->
+                putStrLn ((List.intercalate "\n" (map (Elm.Compiler.errorToString localizer "" source) e)) ++ "\n")
+            Right (Result docs interface js) ->
+                putStrLn (Data.Text.Lazy.unpack js)
