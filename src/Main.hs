@@ -3,6 +3,7 @@
 module Main where
 
 import Compiler
+import JSInterface
 
 import           Control.Concurrent
 import qualified Data.List           as List
