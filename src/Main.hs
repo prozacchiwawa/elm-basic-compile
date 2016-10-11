@@ -2,7 +2,8 @@
 
 module Main where
 
-import           Control.Monad       (mapM)
+import           Control.Monad       (mapM, forever)
+import           Control.Concurrent
 import qualified Data.List           as List
 import qualified Data.Map            as Map
 import qualified Data.Text.Lazy
@@ -80,6 +81,58 @@ data Context = Context {
 compile :: Context -> String -> Elm.Package.Interfaces -> *stuff* :-)
 
 -}
+
+-- Modules matched to the default imports
+importModules = [ ["Basics"]
+                , ["Debug"]
+                , ["List"]
+                , ["Maybe"]
+                , ["Result"]
+                , ["Platform"]
+                , ["Platform", "Cmd"]
+                , ["Platform", "Sub"]
+                ]
+
+-- A function to yield a pair of canonical name and binary interface from a canonical module
+-- name
+readInterface ::
+  String ->
+  Elm.Compiler.Module.Canonical ->
+  IO (Elm.Compiler.Module.Canonical, Elm.Compiler.Module.Interface)
+readInterface versionString name =
+  -- A function to make the hyphenated version of a package name as in build-artifacts
+  let hyphenate rawName = List.intercalate "-" rawName
+  in
+  -- A function that builds the relative file name in elm-stuff of an elmi file. We cheat on
+  -- the version number.
+  let fileName (Elm.Compiler.Module.Canonical (Name user project) modPath) = List.intercalate "/"
+           [ "elm-stuff"
+           , "build-artifacts"
+           , versionString
+           , user
+           , project
+           , "4.0.0"
+           , (hyphenate
+                modPath) ++ ".elmi"
+           ]
+  in
+  do
+      filename <- pure $ fileName name
+      interface <- Utils.File.readBinary filename
+      return $ (name, interface)
+
+readInterfaceService ::
+  String ->
+  Chan [Elm.Compiler.Module.Canonical] ->
+  Chan [(Elm.Compiler.Module.Canonical, Elm.Compiler.Module.Interface)] ->
+  IO ()
+readInterfaceService versionString requestChan replyChan =
+  forever $ do
+    requestedInterfaces <- readChan requestChan
+    -- Load up the interfaces into an IO [(Canonical, Interface)]
+    retrievedInterfaces <- mapM (readInterface versionString) requestedInterfaces
+    writeChan replyChan retrievedInterfaces
+
 main :: IO ()
 main =
   -- Grab the package version so we can lookup the built modules according to compiler version
@@ -92,17 +145,6 @@ main =
      -- The repository that elm-lang lives in
      let elmCore = Name { user = "elm-lang", project = "core" }
      in
-     -- Modules matched to the default imports
-     let importModules = [ ["Basics"]
-                         , ["Debug"]
-                         , ["List"]
-                         , ["Maybe"]
-                         , ["Result"]
-                         , ["Platform"]
-                         , ["Platform", "Cmd"]
-                         , ["Platform", "Sub"]
-                         ]
-     in
      -- Make a list of the names of modules we need to import
      let canonicalNames = map (\n -> Elm.Compiler.Module.Canonical elmCore n) importModules
      in
@@ -113,32 +155,17 @@ main =
                      , _dependencies = canonicalNames
                      }
      in
-     -- A function to make the hyphenated version of a package name as in build-artifacts
-     let hyphenate rawName = List.intercalate "-" rawName
-     in
-     -- A function that builds the relative file name in elm-stuff of an elmi file. We cheat on
-     -- the version number.
-     let fileName (Elm.Compiler.Module.Canonical (Name user project) modPath) = List.intercalate "/"
-              [ "elm-stuff"
-              , "build-artifacts"
-              , versionString
-              , user
-              , project
-              , "4.0.0"
-              , (hyphenate
-                   modPath) ++ ".elmi"
-              ]
-     in
-     -- A function to yield a pair of canonical name and binary interface from a canonical module
-     -- name
-     let readInterface name = do
-         filename <- pure $ fileName name
-         interface <- Utils.File.readBinary filename
-         return (name, interface)
-     in
      do
-       -- Load up the interfaces into an IO [(Canonical, Interface)]
-       interfaces <- mapM readInterface canonicalNames
+       requestReadInterface <- newChan
+       replyReadInterface <- newChan
+
+       -- Start server
+       forkIO $ readInterfaceService versionString requestReadInterface replyReadInterface
+
+       -- Request read of needed interfaces
+       writeChan requestReadInterface canonicalNames
+       interfaces <- readChan replyReadInterface
+
        -- Make the interface map that the compiler consumes
        interfaceMap <- pure $ Map.fromList interfaces
        -- Attempt compilation
