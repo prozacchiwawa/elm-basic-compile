@@ -13,5 +13,7 @@ A gist for the aeson version bump in 0.17 is here:
 
 https://gist.github.com/prozacchiwawa/148611da66eabb7c883995fa9cbd7125
 
+Also make sure to ```npm install``` before building.
+
 After make completes (browserify takes several minutes for me),
 index.html can served and will compile elm code.
