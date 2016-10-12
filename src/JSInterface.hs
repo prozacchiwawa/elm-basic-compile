@@ -32,7 +32,7 @@ import GHCJS.Prim as JS
 import qualified Unsafe.Coerce as UCK
 import qualified GHC.Exts as Exts
 
-foreign import javascript unsafe "(function() { var run = $1; var arg = $2; console.log('run',run); console.log('arg',arg); return run(arg); })()" runAction :: JSRef a -> JSRef b -> IO ()
+foreign import javascript unsafe "(function() { var run = $1; var arg = $2; return run(arg); })()" runAction :: JSRef a -> JSRef b -> IO ()
 
 foreign import javascript unsafe "console.log($1)" trace_ :: JSRef a -> IO ()
 
@@ -110,7 +110,7 @@ replyModules channel value =
 moduleRequestValue versionString (ECM.Canonical (Name user project) modPath) =
   let name = (ECM.Canonical (Name user project) modPath) in
   do
-    packedName <- JS.toJSArray (map JS.toJSString modPath)
+    packedName <- canonicalNameToJS name
     packedRequest <- JS.toJSArray [JS.toJSString (fileName versionString name), packedName]
     return packedRequest
 
@@ -164,11 +164,7 @@ initCompiler loadModules callback =
 
     forkIO $ moduleLoadService versionString loadModules (requestReadInterface, replyReadInterface)
 
-    trace "here1"
-    
     compileCallback <- makeCallback (compile (CommChannels compileRequestInterface requestReadInterface replyReadInterface compileReplyInterface))
-
-    trace "here2"
 
     runAction callback compileCallback
 
