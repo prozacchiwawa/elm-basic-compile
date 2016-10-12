@@ -133,6 +133,13 @@ readInterfaceService versionString requestChan replyChan =
     retrievedInterfaces <- mapM (readInterface versionString) requestedInterfaces
     writeChan replyChan retrievedInterfaces
 
+moduleRequestList parseResult =
+  -- The repository that elm-lang lives in
+  let elmCore = Name { user = "elm-lang", project = "core" } in
+  -- Make a list of the names of modules we need to import
+  let canonicalNames = map (\n -> Elm.Compiler.Module.Canonical elmCore n) importModules in
+  canonicalNames
+
 compileCodeService ::
   String ->
   Chan String ->
@@ -140,24 +147,22 @@ compileCodeService ::
   Chan (Localizer, [Warning], Either [Error] Result) ->
   IO ()
 compileCodeService versionString requestChan (modReqChan, modReplyChan) compiledCode =
-  -- The repository that elm-lang lives in
-  let elmCore = Name { user = "elm-lang", project = "core" }
-  in
-  -- Make a list of the names of modules we need to import
-  let canonicalNames = map (\n -> Elm.Compiler.Module.Canonical elmCore n) importModules
-  in
-  -- A compiler context indicating that we need to import at least the default modules
-  let context = Context
-                  { _packageName = Name { user = "elm-lang", project = "test" }
-                  , _isExposed = False
-                  , _dependencies = canonicalNames
-                  }
-  in
   forever $ do
     source <- readChan requestChan
 
+    usedModulesResult <- pure $ Elm.Compiler.parseDependencies source
+    usedModuleNames <- pure $ moduleRequestList usedModulesResult
+
+    context <- pure $
+    -- A compiler context indicating that we need to import at least the default modules
+      Context
+        { _packageName = Name { user = "elm-lang", project = "test" }
+        , _isExposed = False
+        , _dependencies = usedModuleNames
+        }
+
     -- Request read of needed interfaces
-    writeChan modReqChan canonicalNames
+    writeChan modReqChan usedModuleNames
     interfaces <- readChan modReplyChan
 
     -- Make the interface map that the compiler consumes
