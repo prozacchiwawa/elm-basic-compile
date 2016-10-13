@@ -209,13 +209,22 @@ compile (CommChannels compileRequestInterface requestReadInterface replyReadInte
     Right (EC.Result docs interface js) ->
       runAction callback (JS.toJSString (LazyText.unpack js))
 
+moduleVersionFromJS modVersionJS = do
+  array <- JS.fromJSArray modVersionJS
+  (ECM.Canonical canonical name) <- canonicalNameFromJS (array !! 0)
+  return (name, ((ECM.Canonical canonical name), JS.fromJSString (array !! 1)))
+
+moduleVersionsFromJS modVersionsJS = do
+  array <- JS.fromJSArray modVersionsJS
+  mapM moduleVersionFromJS array
+
 {- initCompiler: Entry point used by interop.  This is the only directly
 callable function by interop.  Interop uses this to obtain a compiler reference.
 It starts the async services used to chain the various data providers together
 to serve the goal of compiling elm code.
 -}
-initCompiler :: JSRef a -> JSRef a -> IO ()
-initCompiler loadModules callback =
+initCompiler :: JSRef a -> JSRef a -> JSRef a -> IO ()
+initCompiler modVersionsJS loadModules callback =
   let (Version major minor patch) = EC.version in
   let versionString = List.intercalate "." (map show [major, minor, patch]) in
   do
@@ -225,10 +234,12 @@ initCompiler loadModules callback =
     compileRequestInterface <- newChan
     compileReplyInterface <- newChan
 
+    modVersions <- moduleVersionsFromJS modVersionsJS
+
     forkIO $
       C.compileCodeService
         versionString
-        C.moduleVersions
+        modVersions
         compileRequestInterface
         (requestReadInterface, replyReadInterface)
         compileReplyInterface
