@@ -2,14 +2,14 @@
 
 module Compiler where
 
-import           Control.Monad       (mapM, forever)
+import           Control.Monad       (forever)
 import           Control.Concurrent
 import qualified Data.List           as List
 import qualified Data.Map            as Map
-import qualified Data.Text.Lazy
+import           Data.Maybe
 
-import           Elm.Compiler
-import           Elm.Compiler.Module
+import           Elm.Compiler as EC
+import           Elm.Compiler.Module as ECM
 import           Elm.Package
 
 import qualified Utils.File
@@ -83,6 +83,7 @@ compile :: Context -> String -> Elm.Package.Interfaces -> *stuff* :-)
 -}
 
 -- Modules matched to the default imports
+importModules :: [ECM.Raw]
 importModules = [ ["Basics"]
                 , ["Debug"]
                 , ["List"]
@@ -93,25 +94,36 @@ importModules = [ ["Basics"]
                 , ["Platform", "Sub"]
                 ]
 
+moduleVersions =
+  [
+    (["Basics"], ((ECM.Canonical (Name "elm-lang" "core") ["Basics"]), "4.0.0")),
+    (["List"], ((ECM.Canonical (Name "elm-lang" "core") ["List"]), "4.0.0")),
+    (["Maybe"], ((ECM.Canonical (Name "elm-lang" "core") ["Maybe"]), "4.0.0")),
+    (["Result"], ((ECM.Canonical (Name "elm-lang" "core") ["Result"]), "4.0.0")),
+    (["Platform"], ((ECM.Canonical (Name "elm-lang" "core") ["Platform"]), "4.0.0")),
+    (["Platform","Cmd"], ((ECM.Canonical (Name "elm-lang" "core") ["Platform","Cmd"]), "4.0.0")),
+    (["Platform","Sub"], ((ECM.Canonical (Name "elm-lang" "core") ["Platform","Sub"]), "4.0.0"))
+  ]
+
 -- A function to yield a pair of canonical name and binary interface from a canonical module
 -- name
 readInterface ::
   String ->
-  Elm.Compiler.Module.Canonical ->
-  IO (Elm.Compiler.Module.Canonical, Elm.Compiler.Module.Interface)
-readInterface versionString name =
+  (ECM.Canonical, String) ->
+  IO (ECM.Canonical, ECM.Interface)
+readInterface versionString (name, version) =
   -- A function to make the hyphenated version of a package name as in build-artifacts
   let hyphenate rawName = List.intercalate "-" rawName
   in
   -- A function that builds the relative file name in elm-stuff of an elmi file. We cheat on
   -- the version number.
-  let fileName (Elm.Compiler.Module.Canonical (Name user project) modPath) = List.intercalate "/"
+  let fileName (ECM.Canonical (Name user project) modPath) = List.intercalate "/"
            [ "elm-stuff"
            , "build-artifacts"
            , versionString
            , user
            , project
-           , "4.0.0"
+           , version
            , (hyphenate
                 modPath) ++ ".elmi"
            ]
@@ -123,8 +135,8 @@ readInterface versionString name =
 
 readInterfaceService ::
   String ->
-  Chan [Elm.Compiler.Module.Canonical] ->
-  Chan [(Elm.Compiler.Module.Canonical, Elm.Compiler.Module.Interface)] ->
+  Chan [(ECM.Canonical, String)] ->
+  Chan [(ECM.Canonical, ECM.Interface)] ->
   IO ()
 readInterfaceService versionString requestChan replyChan =
   forever $ do
@@ -133,41 +145,44 @@ readInterfaceService versionString requestChan replyChan =
     retrievedInterfaces <- mapM (readInterface versionString) requestedInterfaces
     writeChan replyChan retrievedInterfaces
 
-moduleRequestList parseResult =
-  -- The repository that elm-lang lives in
-  let elmCore = Name { user = "elm-lang", project = "core" } in
+moduleRequestList moduleVersions parseResult =
   -- Make a list of the names of modules we need to import
-  let canonicalNames = map (\n -> Elm.Compiler.Module.Canonical elmCore n) importModules in
-  canonicalNames
+  case parseResult of
+    Left errors -> ([],[])
+    Right (_, myname, imports) ->
+      let singletonLookup rawName = maybeToList $ lookup rawName moduleVersions in
+      let allNames = List.union imports importModules in
+      (myname, List.concatMap singletonLookup allNames)
 
 compileCodeService ::
   String ->
+  [(ECM.Raw, (ECM.Canonical, String))] ->
   Chan String ->
-  (Chan [Elm.Compiler.Module.Canonical], Chan [(Elm.Compiler.Module.Canonical, Elm.Compiler.Module.Interface)]) ->
+  (Chan [(ECM.Canonical, String)], Chan [(ECM.Canonical, ECM.Interface)]) ->
   Chan (Localizer, [Warning], Either [Error] Result) ->
   IO ()
-compileCodeService versionString requestChan (modReqChan, modReplyChan) compiledCode =
+compileCodeService versionString moduleVersions requestChan (modReqChan, modReplyChan) compiledCode =
   forever $ do
     source <- readChan requestChan
 
-    usedModulesResult <- pure $ Elm.Compiler.parseDependencies source
-    usedModuleNames <- pure $ moduleRequestList usedModulesResult
+    usedModulesResult <- pure $ EC.parseDependencies source
+    (name, usedModuleNames) <- pure $ moduleRequestList moduleVersions usedModulesResult
+
+    -- Request read of needed interfaces
+    writeChan modReqChan usedModuleNames
+    interfaces <- readChan modReplyChan
 
     context <- pure $
     -- A compiler context indicating that we need to import at least the default modules
       Context
         { _packageName = Name { user = "elm-lang", project = "test" }
         , _isExposed = False
-        , _dependencies = usedModuleNames
+        , _dependencies = map fst usedModuleNames
         }
-
-    -- Request read of needed interfaces
-    writeChan modReqChan usedModuleNames
-    interfaces <- readChan modReplyChan
 
     -- Make the interface map that the compiler consumes
     interfaceMap <- pure $ Map.fromList interfaces
 
     -- Attempt compilation
-    result <- pure (Elm.Compiler.compile context source interfaceMap)
+    result <- pure (EC.compile context source interfaceMap)
     writeChan compiledCode result

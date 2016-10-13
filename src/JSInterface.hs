@@ -86,7 +86,7 @@ canonicalNameFromJS jsObj =
 {- A function that builds the relative file name in elm-stuff of an elmi file. We cheat on
 the version number.
 -}
-fileName versionString (ECM.Canonical (Name user project) modPath) =
+fileName versionString ((ECM.Canonical (Name user project) modPath), version) =
   let hyphenate rawName = List.intercalate "-" rawName in
   List.intercalate "/"
            [ "elm-stuff"
@@ -94,7 +94,7 @@ fileName versionString (ECM.Canonical (Name user project) modPath) =
            , versionString
            , user
            , project
-           , "4.0.0"
+           , version
            , (hyphenate modPath) ++ ".elmi"
            ]
 
@@ -146,12 +146,12 @@ replyModules channel value =
 {- Serialize a request for a single module to be sent to the module provider on
 the other side of the interop boundary.
 -}
-moduleRequestValue :: String -> ECM.Canonical -> IO (JSRef a)
-moduleRequestValue versionString (ECM.Canonical (Name user project) modPath) =
+moduleRequestValue :: String -> (ECM.Canonical, String) -> IO (JSRef a)
+moduleRequestValue versionString ((ECM.Canonical (Name user project) modPath), version) =
   let name = (ECM.Canonical (Name user project) modPath) in
   do
     packedName <- canonicalNameToJS name
-    packedRequest <- JS.toJSArray [JS.toJSString (fileName versionString name), packedName]
+    packedRequest <- JS.toJSArray [JS.toJSString (fileName versionString (name, version)), packedName]
     return packedRequest
 
 {- An async loop that receives module load requests from the compiler,
@@ -161,7 +161,7 @@ to the elm compiler.
 moduleLoadService ::
   String ->
   JSRef a ->
-  (Chan [ECM.Canonical], Chan [(ECM.Canonical, ECM.Interface)]) ->
+  (Chan [(ECM.Canonical, String)], Chan [(ECM.Canonical, ECM.Interface)]) ->
   IO ()
 moduleLoadService versionString loadModules (request,reply) =
   forever $ do
@@ -176,7 +176,7 @@ moduleLoadService versionString loadModules (request,reply) =
 -}
 data CommChannels = CommChannels
     (Chan String)
-    (Chan [ECM.Canonical])
+    (Chan [(ECM.Canonical, String)])
     (Chan [(ECM.Canonical, ECM.Interface)])
     (Chan (EC.Localizer, [EC.Warning], Either [EC.Error] EC.Result))
 
@@ -228,6 +228,7 @@ initCompiler loadModules callback =
     forkIO $
       C.compileCodeService
         versionString
+        C.moduleVersions
         compileRequestInterface
         (requestReadInterface, replyReadInterface)
         compileReplyInterface

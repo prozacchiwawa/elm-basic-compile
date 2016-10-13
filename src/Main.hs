@@ -32,7 +32,7 @@ main =
        compileRequestInterface <- newChan
        compileReplyInterface <- newChan
 
-       forkIO $ compileCodeService versionString compileRequestInterface (requestReadInterface, replyReadInterface) compileReplyInterface
+       forkIO $ compileCodeService versionString Compiler.moduleVersions compileRequestInterface (requestReadInterface, replyReadInterface) compileReplyInterface
 
        writeChan compileRequestInterface source
        (localizer, warnings, result) <- readChan compileReplyInterface
