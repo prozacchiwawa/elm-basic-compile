@@ -211,12 +211,14 @@ compile (CommChannels compileRequestInterface requestReadInterface replyReadInte
 
 moduleVersionFromJS modVersionJS = do
   array <- JS.fromJSArray modVersionJS
-  (ECM.Canonical canonical name) <- canonicalNameFromJS (array !! 0)
-  return (name, ((ECM.Canonical canonical name), JS.fromJSString (array !! 1)))
+  (ECM.Canonical (Name user project) name) <- canonicalNameFromJS (array !! 0)
+  version <- pure $ JS.fromJSString (array !! 1)
+  return (name, ((ECM.Canonical (Name user project) name), version))
 
 moduleVersionsFromJS modVersionsJS = do
   array <- JS.fromJSArray modVersionsJS
-  mapM moduleVersionFromJS array
+  versions <- mapM moduleVersionFromJS array
+  return versions
 
 {- initCompiler: Entry point used by interop.  This is the only directly
 callable function by interop.  Interop uses this to obtain a compiler reference.

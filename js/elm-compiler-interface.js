@@ -8,8 +8,19 @@ var compile = { };
 
 module.exports.init = function() {
     var d = q.defer();
-    
+    var deps = [
+          [["elm-lang", "core", ["Basics"]], "4.0.0"],
+	  [["elm-lang", "core", ["Debug"]], "4.0.0"],
+	  [["elm-lang", "core", ["Result"]], "4.0.0"],
+	  [["elm-lang", "core", ["List"]], "4.0.0"],
+	  [["elm-lang", "core", ["Maybe"]], "4.0.0"],
+	  [["elm-lang", "core", ["Platform"]], "4.0.0"],
+	  [["elm-lang", "core", ["Platform","Cmd"]], "4.0.0"],
+	  [["elm-lang", "core", ["Platform","Sub"]], "4.0.0"]
+    ];
+
     elmBasicCompile.initCompiler(
+	deps,
 	function(req) {
 	    var requests = req[0];
 	    var loaded = req[1];
