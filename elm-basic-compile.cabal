@@ -56,7 +56,7 @@ Executable elm-basic-compile
         elm-compiler == 0.17,
         filepath,
         ghcjs-base,
-        ghcjs-prim,                    
+        ghcjs-prim,
         mtl >= 2.2.1 && < 3,
         optparse-applicative >=0.11 && <0.12,
         raw-strings-qq,

@@ -7,10 +7,11 @@ import           Control.Concurrent
 import qualified Data.List           as List
 import qualified Data.Map            as Map
 import           Data.Maybe
+import           Data.Function
 
 import           Elm.Compiler as EC
 import           Elm.Compiler.Module as ECM
-import           Elm.Package
+import           Elm.Package as EP
 
 import qualified Utils.File
 
@@ -82,6 +83,11 @@ compile :: Context -> String -> Elm.Package.Interfaces -> *stuff* :-)
 
 -}
 
+data CanonicalNameAndVersion = CanonicalNameAndVersion ECM.Canonical String
+    deriving (Ord, Eq, Show)
+
+data CompileResult = CompileResult Result (ECM.Raw,[ECM.Raw])
+
 -- Modules matched to the default imports
 importModules :: [ECM.Raw]
 importModules = [ ["Basics"]
@@ -94,49 +100,36 @@ importModules = [ ["Basics"]
                 , ["Platform", "Sub"]
                 ]
 
-moduleVersions =
-  [
-    (["Basics"], ((ECM.Canonical (Name "elm-lang" "core") ["Basics"]), "4.0.0")),
-    (["List"], ((ECM.Canonical (Name "elm-lang" "core") ["List"]), "4.0.0")),
-    (["Maybe"], ((ECM.Canonical (Name "elm-lang" "core") ["Maybe"]), "4.0.0")),
-    (["Result"], ((ECM.Canonical (Name "elm-lang" "core") ["Result"]), "4.0.0")),
-    (["Platform"], ((ECM.Canonical (Name "elm-lang" "core") ["Platform"]), "4.0.0")),
-    (["Platform","Cmd"], ((ECM.Canonical (Name "elm-lang" "core") ["Platform","Cmd"]), "4.0.0")),
-    (["Platform","Sub"], ((ECM.Canonical (Name "elm-lang" "core") ["Platform","Sub"]), "4.0.0"))
-  ]
-
 -- A function to yield a pair of canonical name and binary interface from a canonical module
 -- name
 readInterface ::
   String ->
-  (ECM.Canonical, String) ->
-  IO (ECM.Canonical, ECM.Interface)
-readInterface versionString (name, version) =
+  CanonicalNameAndVersion ->
+  IO (CanonicalNameAndVersion, ECM.Interface)
+readInterface versionString (CanonicalNameAndVersion (ECM.Canonical (EP.Name user project) rawName) version) =
   -- A function to make the hyphenated version of a package name as in build-artifacts
   let hyphenate rawName = List.intercalate "-" rawName
   in
   -- A function that builds the relative file name in elm-stuff of an elmi file. We cheat on
   -- the version number.
-  let fileName (ECM.Canonical (Name user project) modPath) = List.intercalate "/"
+  let fileName = List.intercalate "/"
            [ "elm-stuff"
            , "build-artifacts"
            , versionString
            , user
            , project
            , version
-           , (hyphenate
-                modPath) ++ ".elmi"
+           , (hyphenate rawName) ++ ".elmi"
            ]
   in
   do
-      filename <- pure $ fileName name
-      interface <- Utils.File.readBinary filename
-      return $ (name, interface)
+      interface <- Utils.File.readBinary fileName
+      return $ ((CanonicalNameAndVersion (ECM.Canonical (EP.Name user project) rawName) version), interface)
 
 readInterfaceService ::
   String ->
-  Chan [(ECM.Canonical, String)] ->
-  Chan [(ECM.Canonical, ECM.Interface)] ->
+  Chan [CanonicalNameAndVersion] ->
+  Chan [(CanonicalNameAndVersion, ECM.Interface)] ->
   IO ()
 readInterfaceService versionString requestChan replyChan =
   forever $ do
@@ -154,12 +147,48 @@ moduleRequestList moduleVersions parseResult =
       let allNames = List.union imports importModules in
       (myname, List.concatMap singletonLookup allNames)
 
+performCompilation ::
+  [CanonicalNameAndVersion] ->
+  [(CanonicalNameAndVersion, ECM.Interface)] ->
+  String ->
+  (Localizer, [Warning], Either [Error] CompileResult)
+performCompilation usedModuleNames interfaces source =
+    -- A compiler context indicating that we need to import at least the default modules
+    let context = Context { _packageName = Name { user = "elm-lang", project = "test" }
+        , _isExposed = False
+        , _dependencies =
+             map
+                (\(CanonicalNameAndVersion (ECM.Canonical (Name user project) rawName) version) -> (ECM.Canonical (Name user project) rawName))
+                usedModuleNames
+        }
+    in
+    -- Make the interface map that the compiler consumes
+    let interfaceMap = interfaces
+            & map
+                (\((CanonicalNameAndVersion canonical version), interface) ->
+                    (canonical, interface))
+            & Map.fromList in
+
+    -- Attempt compilation
+    let (localizer, warnings, result) = EC.compile context source interfaceMap in
+    let rawNameOfModule (CanonicalNameAndVersion (ECM.Canonical (Name user project) rawName) version) = rawName in
+    let resultAndDeps = case result of
+         Left err -> Left err
+         Right r -> Right (CompileResult r (["Main"], map rawNameOfModule usedModuleNames))
+    in
+    (localizer, warnings, resultAndDeps)
+
+showResult res =
+    case res of
+        Left err -> "error"
+        Right (tag, name, used) -> show (name, used)
+
 compileCodeService ::
   String ->
-  [(ECM.Raw, (ECM.Canonical, String))] ->
+  [(ECM.Raw, CanonicalNameAndVersion)] ->
   Chan String ->
-  (Chan [(ECM.Canonical, String)], Chan [(ECM.Canonical, ECM.Interface)]) ->
-  Chan (Localizer, [Warning], Either [Error] Result) ->
+  (Chan [CanonicalNameAndVersion], Chan [(CanonicalNameAndVersion, ECM.Interface)]) ->
+  Chan (Localizer, [Warning], Either [Error] CompileResult) ->
   IO ()
 compileCodeService versionString moduleVersions requestChan (modReqChan, modReplyChan) compiledCode =
   forever $ do
@@ -168,21 +197,15 @@ compileCodeService versionString moduleVersions requestChan (modReqChan, modRepl
     usedModulesResult <- pure $ EC.parseDependencies source
     (name, usedModuleNames) <- pure $ moduleRequestList moduleVersions usedModulesResult
 
+    putStrLn ("name " ++ (show name))
+    putStrLn ("usedModulesResult\n" ++ (List.intercalate "\n" (map show usedModuleNames)))
+
     -- Request read of needed interfaces
     writeChan modReqChan usedModuleNames
     interfaces <- readChan modReplyChan
 
-    context <- pure $
-    -- A compiler context indicating that we need to import at least the default modules
-      Context
-        { _packageName = Name { user = "elm-lang", project = "test" }
-        , _isExposed = False
-        , _dependencies = map fst usedModuleNames
-        }
+    putStrLn ("Interfaces " ++ (show $ map fst interfaces))
 
-    -- Make the interface map that the compiler consumes
-    interfaceMap <- pure $ Map.fromList interfaces
+    (localizer, warnings, resultAndDeps) <- pure $ performCompilation usedModuleNames interfaces source
 
-    -- Attempt compilation
-    result <- pure (EC.compile context source interfaceMap)
-    writeChan compiledCode result
+    writeChan compiledCode (localizer, warnings, resultAndDeps)

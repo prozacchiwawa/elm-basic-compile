@@ -13,6 +13,7 @@ import qualified Data.ByteString.Lazy as LBS
 import Control.Monad (forever)
 import Control.Concurrent
 import Data.List as List
+import Data.Function
 import qualified Data.Text.Lazy as LazyText
 import qualified Data.ByteString.Lazy.Char8 as C8S
 import qualified Data.ByteString.Base64.Lazy as LB64
@@ -31,6 +32,8 @@ import GHCJS.Foreign.Callback
 import GHCJS.Prim as JS
 import qualified Unsafe.Coerce as UCK
 import qualified GHC.Exts as Exts
+
+import Linker
 
 foreign import javascript unsafe
   "(function() { var run = $1; var arg = $2; return run(arg); })()"
@@ -53,6 +56,10 @@ makeCallback callback =
 trace :: String -> IO ()
 trace str = trace_ (JS.toJSString str)
 
+rawNameToJS :: ECM.Raw -> IO (JSRef a)
+rawNameToJS modPath = do
+  JS.toJSArray (map JS.toJSString modPath)
+
 {- Given a Canonical name from elm, produce a javascript object representing it.
 Symmetric with canonicalNameFromJS
 -}
@@ -61,7 +68,7 @@ canonicalNameToJS ::
   IO (JSRef a)
 canonicalNameToJS (ECM.Canonical (Name user project) modPath) =
   do
-    modPathArray <- JS.toJSArray (map JS.toJSString modPath)
+    modPathArray <- rawNameToJS modPath
     obj <- JS.toJSArray [JS.toJSString user, JS.toJSString project, modPathArray]
     return obj
 
@@ -83,10 +90,30 @@ canonicalNameFromJS jsObj =
         (map JS.fromJSString modPathArray)
       )
 
+canonicalNameAndVersionFromJS ::
+  JSRef a ->
+  IO C.CanonicalNameAndVersion
+canonicalNameAndVersionFromJS jsObj =
+  do
+    obj <- JS.fromJSArray jsObj
+    canonical <- canonicalNameFromJS (obj !! 0)
+    version <- pure $ JS.fromJSString (obj !! 1)
+    result <- pure $ C.CanonicalNameAndVersion canonical version
+    putStrLn ("canonicalNameAndVersionFromJS " ++ (show result))
+    return result
+
+canonicalNameAndVersionToJS ::
+  C.CanonicalNameAndVersion ->
+  IO (JSRef a)
+canonicalNameAndVersionToJS (C.CanonicalNameAndVersion canonical version) =
+  do
+    canonicalJS <- canonicalNameToJS canonical
+    JS.toJSArray [canonicalJS, JS.toJSString version]
+
 {- A function that builds the relative file name in elm-stuff of an elmi file. We cheat on
 the version number.
 -}
-fileName versionString ((ECM.Canonical (Name user project) modPath), version) =
+fileName versionString (C.CanonicalNameAndVersion (ECM.Canonical (Name user project) modPath) version) =
   let hyphenate rawName = List.intercalate "-" rawName in
   List.intercalate "/"
            [ "elm-stuff"
@@ -96,6 +123,18 @@ fileName versionString ((ECM.Canonical (Name user project) modPath), version) =
            , project
            , version
            , (hyphenate modPath) ++ ".elmi"
+           ]
+
+objName versionString (C.CanonicalNameAndVersion (ECM.Canonical (Name user project) modPath) version) =
+  let hyphenate rawName = List.intercalate "-" rawName in
+  List.intercalate "/"
+           [ "elm-stuff"
+           , "build-artifacts"
+           , versionString
+           , user
+           , project
+           , version
+           , (hyphenate modPath) ++ ".elmo"
            ]
 
 {- Given a base64 string, use Interface's Binary typeclass to yield an Elm
@@ -124,11 +163,11 @@ base64StringToInterface b64 =
 {- Consume one javascript object from the module provider and return a pair of
 Canonical name and Interface from Elm.
 -}
-convertModule :: JSRef a -> IO (ECM.Canonical, ECM.Interface)
+convertModule :: JSRef a -> IO (C.CanonicalNameAndVersion, ECM.Interface)
 convertModule value =
   do
     array <- JS.fromJSArray value
-    name <- canonicalNameFromJS (array !! 0)
+    name <- canonicalNameAndVersionFromJS (array !! 0)
     modBody <- pure $ JS.fromJSString (array !! 1)
     interface <- base64StringToInterface modBody
     return (name, interface)
@@ -136,7 +175,7 @@ convertModule value =
 {- Given a module reply from javascript, forward a reply to the compiler with
 appropriate deserialization.
 -}
-replyModules :: Chan [(ECM.Canonical, ECM.Interface)] -> JSRef a -> IO ()
+replyModules :: Chan [(C.CanonicalNameAndVersion, ECM.Interface)] -> JSRef a -> IO ()
 replyModules channel value =
   do
     array <- JS.fromJSArray value
@@ -146,12 +185,12 @@ replyModules channel value =
 {- Serialize a request for a single module to be sent to the module provider on
 the other side of the interop boundary.
 -}
-moduleRequestValue :: String -> (ECM.Canonical, String) -> IO (JSRef a)
-moduleRequestValue versionString ((ECM.Canonical (Name user project) modPath), version) =
-  let name = (ECM.Canonical (Name user project) modPath) in
+moduleRequestValue :: String -> C.CanonicalNameAndVersion -> IO (JSRef a)
+moduleRequestValue versionString name =
   do
-    packedName <- canonicalNameToJS name
-    packedRequest <- JS.toJSArray [JS.toJSString (fileName versionString (name, version)), packedName]
+    packedName <- canonicalNameAndVersionToJS name
+    packedRequest <-
+      JS.toJSArray [JS.toJSString (fileName versionString name), packedName]
     return packedRequest
 
 {- An async loop that receives module load requests from the compiler,
@@ -161,37 +200,111 @@ to the elm compiler.
 moduleLoadService ::
   String ->
   JSRef a ->
-  (Chan [(ECM.Canonical, String)], Chan [(ECM.Canonical, ECM.Interface)]) ->
+  (Chan [C.CanonicalNameAndVersion], Chan [(C.CanonicalNameAndVersion, ECM.Interface)]) ->
   IO ()
 moduleLoadService versionString loadModules (request,reply) =
   forever $ do
     interfaces <- readChan request
+
+    putStrLn ("Loading " ++ (show interfaces))
+
     moduleRequestArray <- mapM (moduleRequestValue versionString) interfaces
     moduleRequests <- JS.toJSArray moduleRequestArray
     loadedModuleCallback <- makeCallback (replyModules reply)
     jsRequestObject <- JS.toJSArray [moduleRequests, loadedModuleCallback]
     runAction loadModules jsRequestObject
 
+replyObjs reply value = do
+  array <- JS.fromJSArray value
+  writeChan reply $ map JS.fromJSString array
+
+canonicalNameMatchingRaw ::
+  [(ECM.Raw, C.CanonicalNameAndVersion)] ->
+  ECM.Raw ->
+  [C.CanonicalNameAndVersion]
+canonicalNameMatchingRaw modVersions rawName =
+  modVersions
+    & concatMap (\(rn, (C.CanonicalNameAndVersion canonical version)) -> if rn == rawName then [C.CanonicalNameAndVersion canonical version] else [])
+
+headWithDefault ::
+  [a] ->
+  a ->
+  a
+headWithDefault listA a =
+  case listA of
+    x : _ -> x
+    [] -> a
+
+objectFileRequestValue ::
+  String ->
+  [(ECM.Raw, C.CanonicalNameAndVersion)] ->
+  ECM.Raw ->
+  IO (JSRef a)
+objectFileRequestValue versionString modVersions rawName =
+  do
+    objFileName <- pure $
+      (canonicalNameMatchingRaw modVersions rawName)
+      & concatMap
+          (\(C.CanonicalNameAndVersion (ECM.Canonical (Name user project) rawName) version) ->
+            objName
+              versionString
+              (C.CanonicalNameAndVersion (ECM.Canonical (Name user project) rawName) version)
+          )
+    return $ JS.toJSString objFileName
+
+objectFileService ::
+  String ->
+  [(ECM.Raw, C.CanonicalNameAndVersion)] ->
+  DepMap ->
+  JSRef a ->
+  (Chan [ECM.Raw], Chan [String]) ->
+  IO ()
+objectFileService versionString modVersions (DepMap modGraph) loadObjs (request,reply) =
+  forever $ do
+    interfaces <- readChan request
+    objRequests <- mapM (objectFileRequestValue versionString modVersions) interfaces
+    objRequestsJS <- JS.toJSArray objRequests
+    loadedObjCallback <- makeCallback (replyObjs reply)
+    jsRequestObject <- JS.toJSArray [objRequestsJS, loadedObjCallback]
+    runAction loadObjs jsRequestObject
+
 {- A container type for the communication channels we use with the elm compiler.
 -}
 data CommChannels = CommChannels
     (Chan String)
-    (Chan [(ECM.Canonical, String)])
-    (Chan [(ECM.Canonical, ECM.Interface)])
-    (Chan (EC.Localizer, [EC.Warning], Either [EC.Error] EC.Result))
+    (Chan [C.CanonicalNameAndVersion])
+    (Chan [(C.CanonicalNameAndVersion, ECM.Interface)])
+    (Chan [ECM.Raw])
+    (Chan [String])
+    (Chan (EC.Localizer, [EC.Warning], Either [EC.Error] C.CompileResult))
+
+linkAndDeliver depmap requestObjInterface replyObjInterface callback js name deps =
+  let emitOrderNameList = Linker.buildGraph depmap name deps in
+  do
+    writeChan requestObjInterface emitOrderNameList
+    jsObjectData <- readChan replyObjInterface
+
+    finishedJavascript <- pure $ jsObjectData ++ [js]
+    finishedJS <- pure $ List.intercalate "\n" finishedJavascript & JS.toJSString
+
+    runAction callback finishedJS
 
 {- Compile: Main service function used by interop.
 Given a javascript value containing source code and a compile finished callback,
 kick off compilation by making an appropriate request to the compiler.  It is
 run asynchronously by haskell, so it can be written as a linear process.
 -}
-compile :: CommChannels -> JSRef a -> IO ()
-compile (CommChannels compileRequestInterface requestReadInterface replyReadInterface compileReplyInterface) arg = do
+compile :: Linker.DepMap -> CommChannels -> JSRef a -> IO ()
+compile depmap (CommChannels compileRequestInterface requestReadInterface replyReadInterface requestObjInterface replyObjInterface compileReplyInterface) arg = do
   array <- JS.fromJSArray arg
-  source <- pure $ array !! 0
+  sourceJS <- pure $ array !! 0
   callback <- pure $ array !! 1
 
-  writeChan compileRequestInterface (JS.fromJSString source)
+  source <- pure $ JS.fromJSString sourceJS
+
+  putStrLn source
+
+  writeChan compileRequestInterface source
   (localizer, warnings, result) <- readChan compileReplyInterface
 
   case result of
@@ -202,23 +315,42 @@ compile (CommChannels compileRequestInterface requestReadInterface replyReadInte
             (
               (List.intercalate
                 "\n"
-                (map (EC.errorToString localizer "" (JS.fromJSString source)) e)
+                (map (EC.errorToString localizer "" source) e)
               ) ++ "\n"
             )
           )
-    Right (EC.Result docs interface js) ->
-      runAction callback (JS.toJSString (LazyText.unpack js))
+    Right (C.CompileResult (EC.Result docs interface js) (name, deps)) ->
+      linkAndDeliver depmap requestObjInterface replyObjInterface callback (LazyText.unpack js) name deps
 
-moduleVersionFromJS modVersionJS = do
-  array <- JS.fromJSArray modVersionJS
-  (ECM.Canonical (Name user project) name) <- canonicalNameFromJS (array !! 0)
-  version <- pure $ JS.fromJSString (array !! 1)
-  return (name, ((ECM.Canonical (Name user project) name), version))
+moduleVersionFromJS arr = do
+  c <- canonicalNameAndVersionFromJS arr
+  (C.CanonicalNameAndVersion (ECM.Canonical (Name user project) rawName) version) <- pure c
+  return (rawName, c)
 
+rawNameFromJSArray arr = do
+  array <- JS.fromJSArray arr
+  return $ map JS.fromJSString array
+
+readModuleGraphRowFromJS modGraphRow = do
+  array <- JS.fromJSArray modGraphRow
+  name <- rawNameFromJSArray (array !! 0)
+  dependsOnJS <- JS.fromJSArray (array !! 1)
+  dependsOn <- mapM rawNameFromJSArray dependsOnJS
+  return (name, dependsOn)
+
+lookupModuleFromVersions modVersions rawName =
+  concatMap (\(n,m) -> if n == rawName then [m] else []) modVersions
+
+moduleVersionsFromJS :: JSRef a -> IO ([(ECM.Raw, C.CanonicalNameAndVersion)], Linker.DepMap)
 moduleVersionsFromJS modVersionsJS = do
   array <- JS.fromJSArray modVersionsJS
-  versions <- mapM moduleVersionFromJS array
-  return versions
+  depsArray <- JS.fromJSArray $ array !! 0
+  versions <- mapM moduleVersionFromJS depsArray
+  graphArrayJS <- pure $ array !! 1
+  graphArray <- JS.fromJSArray graphArrayJS
+  graphRows <- mapM readModuleGraphRowFromJS graphArray
+
+  return (versions, Linker.DepMap graphRows)
 
 {- initCompiler: Entry point used by interop.  This is the only directly
 callable function by interop.  Interop uses this to obtain a compiler reference.
@@ -226,17 +358,27 @@ It starts the async services used to chain the various data providers together
 to serve the goal of compiling elm code.
 -}
 initCompiler :: JSRef a -> JSRef a -> JSRef a -> IO ()
-initCompiler modVersionsJS loadModules callback =
+initCompiler modVersionsJS load callback =
   let (Version major minor patch) = EC.version in
   let versionString = List.intercalate "." (map show [major, minor, patch]) in
   do
+    loadArray <- JS.fromJSArray load
+    loadJSObj <- pure $ loadArray !! 0
+    loadModules <- pure $ loadArray !! 1
+
     requestReadInterface <- newChan
     replyReadInterface <- newChan
 
     compileRequestInterface <- newChan
     compileReplyInterface <- newChan
 
-    modVersions <- moduleVersionsFromJS modVersionsJS
+    requestObjectFilesInterface <- newChan
+    replyObjectFilesInterface <- newChan
+
+    (modVersions, modGraph) <- moduleVersionsFromJS modVersionsJS
+
+    trace (show modVersions)
+    trace (show modGraph)
 
     forkIO $
       C.compileCodeService
@@ -252,16 +394,29 @@ initCompiler modVersionsJS loadModules callback =
         loadModules
         (requestReadInterface, replyReadInterface)
 
+    forkIO $
+      objectFileService
+        versionString
+        modVersions
+        modGraph
+        loadJSObj
+        (requestObjectFilesInterface, replyObjectFilesInterface)
+
     compileCallback <-
       makeCallback
         (compile
+          modGraph
           (CommChannels
             compileRequestInterface
             requestReadInterface
             replyReadInterface
+            requestObjectFilesInterface
+            replyObjectFilesInterface
             compileReplyInterface
           )
         )
+
+    trace "About to call callback"
 
     runAction callback compileCallback
 
