@@ -7,7 +7,6 @@ var baseURL = 'http://superheterodyne.net/files/';
 var compile = { };
 
 var deps = [
-  [["elm-lang", "core", ["Native", "Utils"]], "4.0.0"],
   [["elm-lang", "core", ["Array"]], "4.0.0"],
   [["elm-lang", "core", ["Basics"]], "4.0.0"],
   [["elm-lang", "core", ["Debug"]], "4.0.0"],
