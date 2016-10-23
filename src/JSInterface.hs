@@ -199,15 +199,17 @@ to the elm compiler.
 -}
 moduleLoadService ::
   String ->
+  [(ECM.Raw, C.CanonicalNameAndVersion)] ->
+  DepMap ->
   JSRef a ->
-  (Chan [C.CanonicalNameAndVersion], Chan [(C.CanonicalNameAndVersion, ECM.Interface)]) ->
+  (Chan (ECM.Raw, [ECM.Raw]), Chan [(C.CanonicalNameAndVersion, ECM.Interface)]) ->
   IO ()
-moduleLoadService versionString loadModules (request,reply) =
+moduleLoadService versionString modVersions (DepMap depmap) loadModules (request,reply) =
   forever $ do
-    interfaces <- readChan request
-
+    (name, usedRawNames) <- readChan request
+    interfacesRaw <- pure $ Linker.buildGraph (DepMap depmap) name usedRawNames
+    interfaces <- pure $ concatMap (C.canonicalNameMatchingRaw modVersions) interfacesRaw
     putStrLn ("Loading " ++ (show interfaces))
-
     moduleRequestArray <- mapM (moduleRequestValue versionString) interfaces
     moduleRequests <- JS.toJSArray moduleRequestArray
     loadedModuleCallback <- makeCallback (replyModules reply)
@@ -217,14 +219,6 @@ moduleLoadService versionString loadModules (request,reply) =
 replyObjs reply value = do
   array <- JS.fromJSArray value
   writeChan reply $ map JS.fromJSString array
-
-canonicalNameMatchingRaw ::
-  [(ECM.Raw, C.CanonicalNameAndVersion)] ->
-  ECM.Raw ->
-  [C.CanonicalNameAndVersion]
-canonicalNameMatchingRaw modVersions rawName =
-  modVersions
-    & concatMap (\(rn, (C.CanonicalNameAndVersion canonical version)) -> if rn == rawName then [C.CanonicalNameAndVersion canonical version] else [])
 
 headWithDefault ::
   [a] ->
@@ -243,7 +237,7 @@ objectFileRequestValue ::
 objectFileRequestValue versionString modVersions rawName =
   do
     objFileName <- pure $
-      (canonicalNameMatchingRaw modVersions rawName)
+      (C.canonicalNameMatchingRaw modVersions rawName)
       & concatMap
           (\(C.CanonicalNameAndVersion (ECM.Canonical (Name user project) rawName) version) ->
             objName
@@ -272,7 +266,7 @@ objectFileService versionString modVersions (DepMap modGraph) loadObjs (request,
 -}
 data CommChannels = CommChannels
     (Chan String)
-    (Chan [C.CanonicalNameAndVersion])
+    (Chan (ECM.Raw, [ECM.Raw]))
     (Chan [(C.CanonicalNameAndVersion, ECM.Interface)])
     (Chan [ECM.Raw])
     (Chan [String])
@@ -391,6 +385,8 @@ initCompiler modVersionsJS load callback =
     forkIO $
       moduleLoadService
         versionString
+        modVersions
+        modGraph
         loadModules
         (requestReadInterface, replyReadInterface)
 

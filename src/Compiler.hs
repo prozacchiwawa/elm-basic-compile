@@ -100,6 +100,9 @@ importModules = [ ["Basics"]
                 , ["Platform", "Sub"]
                 ]
 
+rawNameOfCanonicalAndVersion (CanonicalNameAndVersion (ECM.Canonical (Name user project) modName) version) =
+  modName
+
 -- A function to yield a pair of canonical name and binary interface from a canonical module
 -- name
 readInterface ::
@@ -126,14 +129,24 @@ readInterface versionString (CanonicalNameAndVersion (ECM.Canonical (EP.Name use
       interface <- Utils.File.readBinary fileName
       return $ ((CanonicalNameAndVersion (ECM.Canonical (EP.Name user project) rawName) version), interface)
 
+canonicalNameMatchingRaw ::
+  [(ECM.Raw, CanonicalNameAndVersion)] ->
+  ECM.Raw ->
+  [CanonicalNameAndVersion]
+canonicalNameMatchingRaw modVersions rawName =
+  modVersions
+    & concatMap (\(rn, (CanonicalNameAndVersion canonical version)) -> if rn == rawName then [CanonicalNameAndVersion canonical version] else [])
+
 readInterfaceService ::
   String ->
-  Chan [CanonicalNameAndVersion] ->
+  [(ECM.Raw, CanonicalNameAndVersion)] ->
+  Chan (ECM.Raw, [ECM.Raw]) ->
   Chan [(CanonicalNameAndVersion, ECM.Interface)] ->
   IO ()
-readInterfaceService versionString requestChan replyChan =
+readInterfaceService versionString modVersions requestChan replyChan =
   forever $ do
-    requestedInterfaces <- readChan requestChan
+    (curName, requestedInterfacesRaw) <- readChan requestChan
+    requestedInterfaces <- pure $ concatMap (canonicalNameMatchingRaw modVersions) requestedInterfacesRaw
     -- Load up the interfaces into an IO [(Canonical, Interface)]
     retrievedInterfaces <- mapM (readInterface versionString) requestedInterfaces
     writeChan replyChan retrievedInterfaces
@@ -187,7 +200,7 @@ compileCodeService ::
   String ->
   [(ECM.Raw, CanonicalNameAndVersion)] ->
   Chan String ->
-  (Chan [CanonicalNameAndVersion], Chan [(CanonicalNameAndVersion, ECM.Interface)]) ->
+  (Chan (ECM.Raw, [ECM.Raw]), Chan [(CanonicalNameAndVersion, ECM.Interface)]) ->
   Chan (Localizer, [Warning], Either [Error] CompileResult) ->
   IO ()
 compileCodeService versionString moduleVersions requestChan (modReqChan, modReplyChan) compiledCode =
@@ -201,10 +214,10 @@ compileCodeService versionString moduleVersions requestChan (modReqChan, modRepl
     putStrLn ("usedModulesResult\n" ++ (List.intercalate "\n" (map show usedModuleNames)))
 
     -- Request read of needed interfaces
-    writeChan modReqChan usedModuleNames
+    writeChan modReqChan (name, map rawNameOfCanonicalAndVersion usedModuleNames)
     interfaces <- readChan modReplyChan
 
-    putStrLn ("Interfaces " ++ (show $ map fst interfaces))
+    putStrLn ("Interfaces\n" ++ (List.intercalate "\n" (map show (map fst interfaces))))
 
     (localizer, warnings, resultAndDeps) <- pure $ performCompilation usedModuleNames interfaces source
 

@@ -39,7 +39,7 @@ main =
        replyReadInterface <- newChan
 
        -- Start server
-       forkIO $ readInterfaceService versionString requestReadInterface replyReadInterface
+       forkIO $ readInterfaceService versionString moduleVersions requestReadInterface replyReadInterface
 
        compileRequestInterface <- newChan
        compileReplyInterface <- newChan
