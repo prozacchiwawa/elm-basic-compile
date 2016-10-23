@@ -51,19 +51,26 @@ module.exports.init = function() {
 		var loaded = req[1];
 		function promiseOneObject(name) {
 			var d = q.defer();
+			if (name == '') {
+				d.resolve('');
+				return d.promise;
+			}
+			console.log('promiseOneObject', name);
 			var request = new XMLHttpRequest();
 			request.addEventListener('error', function() {
-			    d.resolve(['throw "could not load ' +name+ '"']);
+			    d.resolve('throw "could not load ' +name+ '";');
 			});
 			request.addEventListener('load', function() {
-			    d.resolve([request.responseText]);
+			    d.resolve(request.responseText);
 			});
-			var fileNameGuess = name[0];
-			request.open('GET', baseURL + fileNameGuess);
+			var fileNameGuess = name;
+			var url = baseURL + fileNameGuess;
+			request.open('GET', url);
 			request.send();
 			return d.promise;
 		}
 		q.all(requests.map(promiseOneObject)).then(function(modules) {
+			console.log('/* all modules */', modules);
 			loaded(modules);
 		});
 	},
