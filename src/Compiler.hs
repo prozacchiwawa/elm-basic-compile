@@ -210,14 +210,9 @@ compileCodeService versionString moduleVersions requestChan (modReqChan, modRepl
     usedModulesResult <- pure $ EC.parseDependencies source
     (name, usedModuleNames) <- pure $ moduleRequestList moduleVersions usedModulesResult
 
-    putStrLn ("name " ++ (show name))
-    putStrLn ("usedModulesResult\n" ++ (List.intercalate "\n" (map show usedModuleNames)))
-
     -- Request read of needed interfaces
     writeChan modReqChan (name, map rawNameOfCanonicalAndVersion usedModuleNames)
     interfaces <- readChan modReplyChan
-
-    putStrLn ("Interfaces\n" ++ (List.intercalate "\n" (map show (map fst interfaces))))
 
     (localizer, warnings, resultAndDeps) <- pure $ performCompilation usedModuleNames interfaces source
 

@@ -99,7 +99,6 @@ canonicalNameAndVersionFromJS jsObj =
     canonical <- canonicalNameFromJS (obj !! 0)
     version <- pure $ JS.fromJSString (obj !! 1)
     result <- pure $ C.CanonicalNameAndVersion canonical version
-    putStrLn ("canonicalNameAndVersionFromJS " ++ (show result))
     return result
 
 canonicalNameAndVersionToJS ::
@@ -209,7 +208,6 @@ moduleLoadService versionString modVersions (DepMap depmap) loadModules (request
     (name, usedRawNames) <- readChan request
     interfacesRaw <- pure $ Linker.buildGraph (DepMap depmap) name usedRawNames
     interfaces <- pure $ concatMap (C.canonicalNameMatchingRaw modVersions) interfacesRaw
-    putStrLn ("Loading " ++ (show interfaces))
     moduleRequestArray <- mapM (moduleRequestValue versionString) interfaces
     moduleRequests <- JS.toJSArray moduleRequestArray
     loadedModuleCallback <- makeCallback (replyModules reply)
@@ -296,8 +294,6 @@ compile depmap (CommChannels compileRequestInterface requestReadInterface replyR
 
   source <- pure $ JS.fromJSString sourceJS
 
-  putStrLn source
-
   writeChan compileRequestInterface source
   (localizer, warnings, result) <- readChan compileReplyInterface
 
@@ -371,9 +367,6 @@ initCompiler modVersionsJS load callback =
 
     (modVersions, modGraph) <- moduleVersionsFromJS modVersionsJS
 
-    trace (show modVersions)
-    trace (show modGraph)
-
     forkIO $
       C.compileCodeService
         versionString
@@ -411,8 +404,6 @@ initCompiler modVersionsJS load callback =
             compileReplyInterface
           )
         )
-
-    trace "About to call callback"
 
     runAction callback compileCallback
 
