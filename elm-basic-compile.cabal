@@ -54,6 +54,8 @@ Executable elm-basic-compile
         containers >= 0.3,
         directory,
         elm-compiler == 0.17,
+        elm-make == 0.17,
+        elm-package == 0.17,
         filepath,
         ghcjs-base,
         ghcjs-prim,

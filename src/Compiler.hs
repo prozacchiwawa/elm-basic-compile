@@ -13,6 +13,7 @@ import           Elm.Compiler as EC
 import           Elm.Compiler.Module as ECM
 import           Elm.Package as EP
 
+import Types
 import qualified Utils.File
 
 -- import AST.Declaration import AST.Variable import AST.Module import AST.Module.Name import
@@ -83,11 +84,6 @@ compile :: Context -> String -> Elm.Package.Interfaces -> *stuff* :-)
 
 -}
 
-data CanonicalNameAndVersion = CanonicalNameAndVersion ECM.Canonical String
-    deriving (Ord, Eq, Show)
-
-data CompileResult = CompileResult Result (ECM.Raw,[ECM.Raw])
-
 -- Modules matched to the default imports
 importModules :: [ECM.Raw]
 importModules = [ ["Basics"]
@@ -99,9 +95,6 @@ importModules = [ ["Basics"]
                 , ["Platform", "Cmd"]
                 , ["Platform", "Sub"]
                 ]
-
-rawNameOfCanonicalAndVersion (CanonicalNameAndVersion (ECM.Canonical (Name user project) modName) version) =
-  modName
 
 -- A function to yield a pair of canonical name and binary interface from a canonical module
 -- name
@@ -130,35 +123,38 @@ readInterface versionString (CanonicalNameAndVersion (ECM.Canonical (EP.Name use
       return $ ((CanonicalNameAndVersion (ECM.Canonical (EP.Name user project) rawName) version), interface)
 
 canonicalNameMatchingRaw ::
-  [(ECM.Raw, CanonicalNameAndVersion)] ->
+  StaticBuildInfo ->
   ECM.Raw ->
   [CanonicalNameAndVersion]
-canonicalNameMatchingRaw modVersions rawName =
+canonicalNameMatchingRaw (StaticBuildInfo versionString modVersions modGraph) rawName =
   modVersions
     & concatMap (\(rn, (CanonicalNameAndVersion canonical version)) -> if rn == rawName then [CanonicalNameAndVersion canonical version] else [])
 
 readInterfaceService ::
-  String ->
-  [(ECM.Raw, CanonicalNameAndVersion)] ->
+  StaticBuildInfo ->
   Chan (ECM.Raw, [ECM.Raw]) ->
   Chan [(CanonicalNameAndVersion, ECM.Interface)] ->
   IO ()
-readInterfaceService versionString modVersions requestChan replyChan =
+readInterfaceService sb@(StaticBuildInfo versionString modVersions modGraph) requestChan replyChan =
   forever $ do
     (curName, requestedInterfacesRaw) <- readChan requestChan
-    requestedInterfaces <- pure $ concatMap (canonicalNameMatchingRaw modVersions) requestedInterfacesRaw
+    requestedInterfaces <- pure $ concatMap (canonicalNameMatchingRaw sb) requestedInterfacesRaw
     -- Load up the interfaces into an IO [(Canonical, Interface)]
     retrievedInterfaces <- mapM (readInterface versionString) requestedInterfaces
     writeChan replyChan retrievedInterfaces
 
-moduleRequestList moduleVersions parseResult =
+moduleRequestList ::
+  StaticBuildInfo ->
+  Either [Error] (Tag, ECM.Raw, [ECM.Raw]) ->
+  (ECM.Raw, [ECM.Raw])
+moduleRequestList (StaticBuildInfo versionString modVersions modGraph) parseResult =
   -- Make a list of the names of modules we need to import
   case parseResult of
     Left errors -> ([],[])
     Right (_, myname, imports) ->
-      let singletonLookup rawName = maybeToList $ lookup rawName moduleVersions in
+      let singletonLookup rawName = maybeToList $ lookup rawName modVersions in
       let allNames = List.union imports importModules in
-      (myname, List.concatMap singletonLookup allNames)
+      (myname, map rawNameFromCanonicalNameAndVersion (List.concatMap singletonLookup allNames))
 
 performCompilation ::
   [CanonicalNameAndVersion] ->
@@ -197,23 +193,23 @@ showResult res =
         Right (tag, name, used) -> show (name, used)
 
 compileCodeService ::
-  String ->
-  [(ECM.Raw, CanonicalNameAndVersion)] ->
+  StaticBuildInfo ->
   Chan String ->
   (Chan (ECM.Raw, [ECM.Raw]), Chan [(CanonicalNameAndVersion, ECM.Interface)]) ->
   Chan (Localizer, [Warning], Either [Error] CompileResult) ->
   IO ()
-compileCodeService versionString moduleVersions requestChan (modReqChan, modReplyChan) compiledCode =
+compileCodeService sb@(StaticBuildInfo versionString moduleVersions modGraph) requestChan (modReqChan, modReplyChan) compiledCode =
   forever $ do
     source <- readChan requestChan
 
     usedModulesResult <- pure $ EC.parseDependencies source
-    (name, usedModuleNames) <- pure $ moduleRequestList moduleVersions usedModulesResult
+    (name, usedModuleNames) <- pure $ moduleRequestList sb usedModulesResult
 
     -- Request read of needed interfaces
-    writeChan modReqChan (name, map rawNameOfCanonicalAndVersion usedModuleNames)
+    usedCanonicalModuleNames <- pure $ concatMap (lookupModuleFromVersions sb) usedModuleNames
+    writeChan modReqChan (name, map Types.rawNameFromCanonicalNameAndVersion usedCanonicalModuleNames)
     interfaces <- readChan modReplyChan
 
-    (localizer, warnings, resultAndDeps) <- pure $ performCompilation usedModuleNames interfaces source
+    (localizer, warnings, resultAndDeps) <- pure $ performCompilation usedCanonicalModuleNames interfaces source
 
     writeChan compiledCode (localizer, warnings, resultAndDeps)
