@@ -15,33 +15,6 @@ import           System.IO            (Handle, IOMode (ReadMode, WriteMode),
 import           System.IO.Error      (annotateIOError, ioeGetErrorType,
                                        modifyIOError)
 
--- import qualified BuildManager as BM
-writeBinary :: (Binary.Binary a) => FilePath -> a -> IO ()
-writeBinary path value =
-  do
-    let dir = dropFileName path
-    createDirectoryIfMissing True dir
-    withBinaryFile path WriteMode $ \handle -> LBS.hPut handle (Binary.encode value)
-
-readBinary :: (Binary.Binary a) => FilePath -> IO a
-readBinary path =
-  do
-    exists <- liftIO (doesFileExist path)
-    if exists
-      then decode
-      else ioError (userError path)
-
-  where
-    decode =
-      do
-        bits <- liftIO (LBS.readFile path)
-        case Binary.decodeOrFail bits of
-          Left _ ->
-            ioError (userError path)
-
-          Right (_, _, value) ->
-            return value
-
 {-|
   readStringUtf8 converts Text to String instead of reading
   a String directly because System.IO.hGetContents is lazy,

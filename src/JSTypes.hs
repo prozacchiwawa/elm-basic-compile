@@ -111,10 +111,10 @@ base64StringToInterface b64 =
           Right (_, _, value) ->
             return value
 
-base64StringToBuildGraph ::
+base64StringToBuildData ::
   String ->
-  IO (TheMasterPlan.ProjectGraph Location)
-base64StringToBuildGraph b64 =
+  IO (TheMasterPlan.ProjectData Location)
+base64StringToBuildData b64 =
   let bytestring = C8S.pack b64 in
   let bits = LB64.decode bytestring in
   do
@@ -139,7 +139,7 @@ depMapRowFromJS :: JSVal -> IO NameAndVersionWithGraph
 depMapRowFromJS jsArray = do
   array <- JS.fromJSArray jsArray
   canonicalNameAndVersion <- nameAndVersionFromJS (array !! 0)
-  graphDat <- base64StringToBuildGraph (JS.fromJSString (array !! 1))
+  graphDat <- base64StringToBuildData (JS.fromJSString (array !! 1))
   return $ NameAndVersionWithGraph canonicalNameAndVersion graphDat
 
 moduleVersionsFromJS :: JSVal -> IO ([(ECM.Raw, CanonicalNameAndVersion)], [NameAndVersionWithGraph])

@@ -1,6 +1,7 @@
 module Types where
 
 import Control.Concurrent
+import Data.Function
 
 import Elm.Compiler as EC
 import Elm.Compiler.Module as ECM
@@ -11,7 +12,7 @@ data CanonicalNameAndVersion = CanonicalNameAndVersion ECM.Canonical String
     deriving (Ord, Eq, Show)
 
 type DepMap = TheMasterPlan.ProjectGraph Location
-data NameAndVersion = NameAndVersion Name String
+data NameAndVersion = NameAndVersion Name String deriving (Ord, Eq, Show)
 data NameAndVersionWithGraph = NameAndVersionWithGraph NameAndVersion DepMap
 
 data StaticBuildInfo = StaticBuildInfo
@@ -36,6 +37,13 @@ rawNameFromCanonicalNameAndVersion ::
   ECM.Raw
 rawNameFromCanonicalNameAndVersion (CanonicalNameAndVersion (ECM.Canonical (Name user project) modPath) version) =
   modPath
+
+lookupCanonicalDepNamesFromGraph ::
+  StaticBuildInfo ->
+  CanonicalNameAndVersion ->
+  [(CanonicalNameAndVersion, DepMap)]
+lookupCanonicalDepNamesFromGraph sg@(StaticBuildInfo versionString modVersions modGraph) (CanonicalNameAndVersion (ECM.Canonical (Name user project) modPath) version) =
+  concatMap (\ nag@(NameAndVersionWithGraph (NameAndVersion (Name u1 p1) version) depmap) -> if u1 == user && p1 == project then [((CanonicalNameAndVersion (ECM.Canonical (Name u1 p1) modPath) version), depmap)] else []) modGraph
 
 lookupModuleFromVersions ::
   StaticBuildInfo ->

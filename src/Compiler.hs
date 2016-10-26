@@ -15,6 +15,7 @@ import           Elm.Package as EP
 
 import Types
 import qualified Utils.File
+import Utils.Misc
 
 -- import AST.Declaration import AST.Variable import AST.Module import AST.Module.Name import
 -- AST.Type
@@ -96,32 +97,6 @@ importModules = [ ["Basics"]
                 , ["Platform", "Sub"]
                 ]
 
--- A function to yield a pair of canonical name and binary interface from a canonical module
--- name
-readInterface ::
-  String ->
-  CanonicalNameAndVersion ->
-  IO (CanonicalNameAndVersion, ECM.Interface)
-readInterface versionString (CanonicalNameAndVersion (ECM.Canonical (EP.Name user project) rawName) version) =
-  -- A function to make the hyphenated version of a package name as in build-artifacts
-  let hyphenate rawName = List.intercalate "-" rawName
-  in
-  -- A function that builds the relative file name in elm-stuff of an elmi file. We cheat on
-  -- the version number.
-  let fileName = List.intercalate "/"
-           [ "elm-stuff"
-           , "build-artifacts"
-           , versionString
-           , user
-           , project
-           , version
-           , (hyphenate rawName) ++ ".elmi"
-           ]
-  in
-  do
-      interface <- Utils.File.readBinary fileName
-      return $ ((CanonicalNameAndVersion (ECM.Canonical (EP.Name user project) rawName) version), interface)
-
 canonicalNameMatchingRaw ::
   StaticBuildInfo ->
   ECM.Raw ->
@@ -129,19 +104,6 @@ canonicalNameMatchingRaw ::
 canonicalNameMatchingRaw (StaticBuildInfo versionString modVersions modGraph) rawName =
   modVersions
     & concatMap (\(rn, (CanonicalNameAndVersion canonical version)) -> if rn == rawName then [CanonicalNameAndVersion canonical version] else [])
-
-readInterfaceService ::
-  StaticBuildInfo ->
-  Chan (ECM.Raw, [ECM.Raw]) ->
-  Chan [(CanonicalNameAndVersion, ECM.Interface)] ->
-  IO ()
-readInterfaceService sb@(StaticBuildInfo versionString modVersions modGraph) requestChan replyChan =
-  forever $ do
-    (curName, requestedInterfacesRaw) <- readChan requestChan
-    requestedInterfaces <- pure $ concatMap (canonicalNameMatchingRaw sb) requestedInterfacesRaw
-    -- Load up the interfaces into an IO [(Canonical, Interface)]
-    retrievedInterfaces <- mapM (readInterface versionString) requestedInterfaces
-    writeChan replyChan retrievedInterfaces
 
 moduleRequestList ::
   StaticBuildInfo ->
@@ -168,7 +130,7 @@ performCompilation usedModuleNames interfaces source =
         , _dependencies =
              map
                 (\(CanonicalNameAndVersion (ECM.Canonical (Name user project) rawName) version) -> (ECM.Canonical (Name user project) rawName))
-                usedModuleNames
+                (trace usedModuleNames)
         }
     in
     -- Make the interface map that the compiler consumes
@@ -202,14 +164,16 @@ compileCodeService sb@(StaticBuildInfo versionString moduleVersions modGraph) re
   forever $ do
     source <- readChan requestChan
 
+    putStrLn $ "Source " ++ source
+
     usedModulesResult <- pure $ EC.parseDependencies source
     (name, usedModuleNames) <- pure $ moduleRequestList sb usedModulesResult
 
-    putStrLn (show (name, usedModuleNames))
+    putStrLn $ "Got used modules"
 
     -- Request read of needed interfaces
-    usedCanonicalModuleNames <- pure $ concatMap (lookupModuleFromVersions sb) usedModuleNames
-    writeChan modReqChan (name, map Types.rawNameFromCanonicalNameAndVersion usedCanonicalModuleNames)
+    usedCanonicalModuleNames <- pure $ trace (concatMap (lookupModuleFromVersions sb) usedModuleNames)
+    writeChan modReqChan (name, map Types.rawNameFromCanonicalNameAndVersion (trace usedCanonicalModuleNames))
     interfaces <- readChan modReplyChan
 
     (localizer, warnings, resultAndDeps) <- pure $ performCompilation usedCanonicalModuleNames interfaces source
