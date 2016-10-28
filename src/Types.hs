@@ -11,7 +11,7 @@ import TheMasterPlan
 data CanonicalNameAndVersion = CanonicalNameAndVersion ECM.Canonical String
     deriving (Ord, Eq, Show)
 
-type DepMap = TheMasterPlan.ProjectData Location
+type DepMap = TheMasterPlan.ProjectGraph Location
 data NameAndVersion = NameAndVersion Name String deriving (Ord, Eq, Show)
 data NameAndVersionWithGraph = NameAndVersionWithGraph NameAndVersion DepMap
 

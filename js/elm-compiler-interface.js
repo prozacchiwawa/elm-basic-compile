@@ -210,10 +210,11 @@ module.exports.init = function() {
                 });
             })
         );
-        return [deps, mods];
+        return q.all([deps, mods]);
     }).then(function(depsAndMods) {
         return [depsAndMods[0], Array.prototype.concat.apply([], depsAndMods[1])];
     }).then(function(depsAndMods) {
+        console.log('depsAndMods',JSON.stringify(depsAndMods, null, 4));
         var deps = depsAndMods[0];
         var mods = depsAndMods[1];
         return q.all(
@@ -227,7 +228,7 @@ module.exports.init = function() {
           return [mods, graphs];
         });
     }).then(function(modsAndGraphs) {
-        console.log(JSON.stringify(modsAndGraphs, null, 4));
+        //console.log(JSON.stringify(modsAndGraphs, null, 4));
         elmBasicCompile.initCompiler(
           	modsAndGraphs,
             textFilesRequest,

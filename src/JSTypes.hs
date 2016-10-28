@@ -59,12 +59,13 @@ canonicalNameFromJS ::
 canonicalNameFromJS jsObj =
   do
     obj <- JS.fromJSArray jsObj
-    modPathArray <- JS.fromJSArray (obj !! 2)
+    modNameArray <- JS.fromJSArray (obj !! 0)
+    modPathArray <- JS.fromJSArray (obj !! 1)
     return (
       ECM.Canonical
         (Name
-          (JS.fromJSString (obj !! 0))
-          (JS.fromJSString (obj !! 1))
+          (JS.fromJSString (modNameArray !! 0))
+          (JS.fromJSString (modNameArray !! 1))
         )
         (map JS.fromJSString modPathArray)
       )
@@ -113,7 +114,7 @@ base64StringToInterface b64 =
 
 base64StringToBuildData ::
   String ->
-  IO (TheMasterPlan.ProjectData Location)
+  IO (TheMasterPlan.ProjectGraph Location)
 base64StringToBuildData b64 =
   let bytestring = C8S.pack b64 in
   let bits = LB64.decode bytestring in
@@ -145,9 +146,13 @@ depMapRowFromJS jsArray = do
 moduleVersionsFromJS :: JSVal -> IO ([(ECM.Raw, CanonicalNameAndVersion)], [NameAndVersionWithGraph])
 moduleVersionsFromJS modVersionsJS = do
   depsArray <- JS.fromJSArray modVersionsJS
+  putStrLn $ "moduleVersionsFromJS 1"
   canonicalNames <- JS.fromJSArray (depsArray !! 0)
+  putStrLn $ "moduleVersionsFromJS 2"
   versionsCanonical <- mapM canonicalNameAndVersionFromJS canonicalNames
+  putStrLn $ "versionsCanonical " ++ (show versionsCanonical)
   versions <- pure $ map (\vc -> (rawNameFromCanonicalNameAndVersion vc, vc)) versionsCanonical
+  putStrLn $ "versions " ++ (show versions)
   depMapRows <- JS.fromJSArray (depsArray !! 1)
   depMap <- mapM depMapRowFromJS depMapRows
   return (versions, depMap)

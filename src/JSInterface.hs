@@ -15,6 +15,7 @@ import qualified Data.ByteString.Lazy as LBS
 import Control.Monad (forever)
 import Control.Concurrent
 import Data.List as List
+import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Function
 import qualified Data.Text.Lazy as LazyText
@@ -130,7 +131,7 @@ canonicalModulesFromDepMap ::
   DepMap ->
   [CanonicalModule]
 canonicalModulesFromDepMap g =
-  projectDependencies g
+  g & projectData & Map.toList & map snd & concatMap projectDependencies
 
 getRawNamesFromDepMap ::
   DepMap ->
@@ -280,6 +281,7 @@ compile sb@(StaticBuildInfo versionString modVersions depmap) (CommChannels comp
 moduleVersionFromJS arr = do
   c <- canonicalNameAndVersionFromJS arr
   (CanonicalNameAndVersion (ECM.Canonical (Name user project) rawName) version) <- pure c
+  putStrLn $ "modVersions in " ++ (show c)
   return (rawName, c)
 
 rawNameFromJSArray arr = do
@@ -302,6 +304,8 @@ initCompiler modVersionsJS load callback =
     loadJSObj <- pure $ loadArray !! 0
     loadModules <- pure $ loadArray !! 1
 
+    putStrLn "initCompler : 2"
+
     requestReadInterface <- newChan
     replyReadInterface <- newChan
 
@@ -313,7 +317,11 @@ initCompiler modVersionsJS load callback =
 
     (modVersions, modGraph) <- moduleVersionsFromJS modVersionsJS
 
+    putStrLn "initCompler : 3"
+
     staticBuildInfo <- pure $ StaticBuildInfo versionString modVersions modGraph
+
+    putStrLn "initCompler : 4"
 
     forkIO $
       C.compileCodeService

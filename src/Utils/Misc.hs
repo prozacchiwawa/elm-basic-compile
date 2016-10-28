@@ -26,15 +26,17 @@ headWithDefault listA a =
     x : _ -> x
     [] -> a
 
-#ifdef __GHCJS__
 foreign import javascript unsafe
   "console.log($1)"
   trace_ :: JSRef a -> ()
 
+foreign import javascript unsafe
+  "console.log($1)"
+  log_ :: JSRef a -> ()
+
+log :: a -> a
+log v = snd (log_ (UCK.unsafeCoerce v), v)
+
 {- output a string.  Don't leave home without it. -}
 trace :: (Show a) => a -> a
 trace a = snd (trace_ (JS.toJSString (show a)), a)
-#else
-trace :: (Show a) => a -> a
-trace a = a
-#endif
