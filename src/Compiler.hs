@@ -194,10 +194,12 @@ compileCodeService sb@(StaticBuildInfo versionString moduleVersions modGraph) re
     usedModulesResult <- pure $ EC.parseDependencies source
     (name, usedModuleNames) <- moduleRequestList sb usedModulesResult
 
-    putStrLn $ "Got used modules" ++ (show usedModuleNames)
+    putStrLn $ "Got used modules " ++ (show usedModuleNames)
 
     -- Request read of needed interfaces
     usedCanonicalModuleNames <- pure $ trace (concatMap (lookupModuleFromVersions sb) usedModuleNames)
+
+    putStrLn $ "Request module interfaces " ++ (show usedCanonicalModuleNames)
     writeChan modReqChan (name, map Types.rawNameFromCanonicalNameAndVersion (trace usedCanonicalModuleNames))
     interfaces <- readChan modReplyChan
 

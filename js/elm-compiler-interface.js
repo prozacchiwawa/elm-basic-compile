@@ -173,6 +173,7 @@ function textFilesRequest(req) {
 function binaryFilesRequest(req) {
     var requests = req[0];
     var loaded = req[1];
+    console.log('requested binary files',JSON.stringify(requests, null, 4));
     function promiseOneModule(name) {
         return promiseOneObject(name[0]).then(function(text) {
             return [name[1], btoa(text)];

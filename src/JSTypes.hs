@@ -48,7 +48,8 @@ canonicalNameToJS ::
 canonicalNameToJS (ECM.Canonical (Name user project) modPath) =
   do
     modPathArray <- rawNameToJS modPath
-    obj <- JS.toJSArray [JS.toJSString user, JS.toJSString project, modPathArray]
+    pnameArray <- JS.toJSArray [JS.toJSString user, JS.toJSString project]
+    obj <- JS.toJSArray [pnameArray, modPathArray]
     return obj
 
 {- Deserialize an Elm Canonical name from a JSVal.
@@ -164,6 +165,7 @@ convertModule :: JSVal -> IO (CanonicalNameAndVersion, ECM.Interface)
 convertModule value = do
   array <- JS.fromJSArray value
   name <- canonicalNameAndVersionFromJS (array !! 0)
+  putStrLn $ "name " ++ (show name)
   modBody <- pure $ JS.fromJSString (array !! 1)
   interface <- base64StringToInterface modBody
   return (name, interface)

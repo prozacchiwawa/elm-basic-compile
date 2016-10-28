@@ -152,15 +152,17 @@ buildOutInterfaceList ::
   StaticBuildInfo ->
   [ECM.Raw] ->
   [ECM.Raw] ->
-  [ECM.Raw]
+  IO [ECM.Raw]
 buildOutInterfaceList sb@(StaticBuildInfo versionString modVersions depmap) completed desired =
-  let f = case desired of
-            [] ->
-              (\_ -> completed)
-            i : is ->
-              (\_ -> buildOutInterfaceList sb (i : (filter (\x -> x /= i) completed)) ((getRawDepsFromRawName sb i) ++ desired))
-  in
-  f ()
+  case desired of
+    [] -> do
+      return completed
+    i : is -> do
+      putStrLn $ "buildOutInterfaceList " ++ (show completed) ++ " want " ++ (show desired)
+      newHave <- pure $ i : (filter (\x -> x /= i) completed)
+      extraWant <- pure $ (getRawDepsFromRawName sb i) ++ is
+      want <- pure $ filter (\x -> not $ List.any (\y -> y == x) newHave) extraWant
+      buildOutInterfaceList sb newHave want
 
 {- An async loop that receives module load requests from the compiler,
 forwards them through interop with a callback that sends the results back
@@ -174,7 +176,8 @@ moduleLoadService ::
 moduleLoadService sb@(StaticBuildInfo versionString modVersions depmap) loadModules (request,reply) =
   forever $ do
     (name, usedRawNames) <- readChan request
-    interfacesRaw <- pure $ buildOutInterfaceList sb [] (trace usedRawNames)
+    putStrLn $ "usedRawNames " ++ (show usedRawNames)
+    interfacesRaw <- buildOutInterfaceList sb [] (trace usedRawNames)
     putStrLn $ "buildOutInterfaceList input " ++ (show usedRawNames) ++ " output " ++ (show interfacesRaw)
     interfaces <- pure $ concatMap (C.canonicalNameMatchingRaw sb) interfacesRaw
     moduleRequestArray <- mapM (moduleRequestValue versionString) interfaces
@@ -227,8 +230,8 @@ linkAndDeliver ::
   [ECM.Raw] ->
   IO ()
 linkAndDeliver sb@(StaticBuildInfo versionString modVersions depmap) requestObjInterface replyObjInterface callback js name deps =
-  let emitOrderNameList = buildOutInterfaceList sb [] deps in
   do
+    emitOrderNameList <- buildOutInterfaceList sb [] deps
     writeChan requestObjInterface (map rawNameFromCanonicalNameAndVersion (concatMap (lookupModuleFromVersions sb) emitOrderNameList))
     jsObjectData <- readChan replyObjInterface
 
