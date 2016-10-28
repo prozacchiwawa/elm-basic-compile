@@ -147,13 +147,9 @@ depMapRowFromJS jsArray = do
 moduleVersionsFromJS :: JSVal -> IO ([(ECM.Raw, CanonicalNameAndVersion)], [NameAndVersionWithGraph])
 moduleVersionsFromJS modVersionsJS = do
   depsArray <- JS.fromJSArray modVersionsJS
-  putStrLn $ "moduleVersionsFromJS 1"
   canonicalNames <- JS.fromJSArray (depsArray !! 0)
-  putStrLn $ "moduleVersionsFromJS 2"
   versionsCanonical <- mapM canonicalNameAndVersionFromJS canonicalNames
-  putStrLn $ "versionsCanonical " ++ (show versionsCanonical)
   versions <- pure $ map (\vc -> (rawNameFromCanonicalNameAndVersion vc, vc)) versionsCanonical
-  putStrLn $ "versions " ++ (show versions)
   depMapRows <- JS.fromJSArray (depsArray !! 1)
   depMap <- mapM depMapRowFromJS depMapRows
   return (versions, depMap)
@@ -165,7 +161,6 @@ convertModule :: JSVal -> IO (CanonicalNameAndVersion, ECM.Interface)
 convertModule value = do
   array <- JS.fromJSArray value
   name <- canonicalNameAndVersionFromJS (array !! 0)
-  putStrLn $ "name " ++ (show name)
   modBody <- pure $ JS.fromJSString (array !! 1)
   interface <- base64StringToInterface modBody
   return (name, interface)

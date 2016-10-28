@@ -110,11 +110,8 @@ singletonLookup ::
   ECM.Raw ->
   IO [CanonicalNameAndVersion]
 singletonLookup (StaticBuildInfo versionString modVersions modGraph) rawName = do
-  putStrLn $ "modVersions " ++ (show modVersions)
   lookedUp <- pure $ lookup rawName modVersions
-  putStrLn $ "lookedUp " ++ (show lookedUp)
   listed <- pure $ maybeToList $ lookedUp
-  putStrLn $ "listed " ++ (show listed)
   return listed
 
 moduleRequestListRight ::
@@ -124,12 +121,9 @@ moduleRequestListRight ::
   IO (ECM.Raw, [ECM.Raw])
 moduleRequestListRight sb@(StaticBuildInfo versionString modVersions modGraph) myname imports =
   do
-    allNames <- pure $ List.union imports (trace importModules)
-    putStrLn $ "allNames " ++ (show allNames)
+    allNames <- pure $ List.union imports importModules
     allNames2 <- mapM (singletonLookup sb) allNames
-    putStrLn $ "allNames2 " ++ (show allNames2)
     result <- pure $ map rawNameFromCanonicalNameAndVersion (List.concat allNames2)
-    putStrLn $ "result " ++ (show result)
     return (myname, result)
 
 moduleRequestList ::
@@ -140,12 +134,8 @@ moduleRequestList sb@(StaticBuildInfo versionString modVersions modGraph) parseR
   -- Make a list of the names of modules we need to import
   case parseResult of
     Left errors -> do
-      putStrLn "errors"
       return ([],[])
     Right (_, myname, imports) -> do
-      putStrLn "moduleRequestList success"
-      putStrLn $ "myname " ++ (show myname)
-      putStrLn $ "imports " ++ (show imports)
       moduleRequestListRight sb myname imports
 
 performCompilation ::
@@ -160,7 +150,7 @@ performCompilation usedModuleNames interfaces source =
         , _dependencies =
              map
                 (\(CanonicalNameAndVersion (ECM.Canonical (Name user project) rawName) version) -> (ECM.Canonical (Name user project) rawName))
-                (trace usedModuleNames)
+                usedModuleNames
         }
     in
     -- Make the interface map that the compiler consumes
@@ -189,18 +179,13 @@ compileCodeService sb@(StaticBuildInfo versionString moduleVersions modGraph) re
   forever $ do
     source <- readChan requestChan
 
-    putStrLn $ "Source " ++ source
-
     usedModulesResult <- pure $ EC.parseDependencies source
     (name, usedModuleNames) <- moduleRequestList sb usedModulesResult
 
-    putStrLn $ "Got used modules " ++ (show usedModuleNames)
-
     -- Request read of needed interfaces
-    usedCanonicalModuleNames <- pure $ trace (concatMap (lookupModuleFromVersions sb) usedModuleNames)
+    usedCanonicalModuleNames <- pure $ concatMap (lookupModuleFromVersions sb) usedModuleNames
 
-    putStrLn $ "Request module interfaces " ++ (show usedCanonicalModuleNames)
-    writeChan modReqChan (name, map Types.rawNameFromCanonicalNameAndVersion (trace usedCanonicalModuleNames))
+    writeChan modReqChan (name, map Types.rawNameFromCanonicalNameAndVersion usedCanonicalModuleNames)
     interfaces <- readChan modReplyChan
 
     (localizer, warnings, resultAndDeps) <- pure $ performCompilation usedCanonicalModuleNames interfaces source

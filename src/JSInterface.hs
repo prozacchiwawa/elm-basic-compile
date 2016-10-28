@@ -158,7 +158,6 @@ buildOutInterfaceList sb@(StaticBuildInfo versionString modVersions depmap) comp
     [] -> do
       return completed
     i : is -> do
-      putStrLn $ "buildOutInterfaceList " ++ (show completed) ++ " want " ++ (show desired)
       newHave <- pure $ i : (filter (\x -> x /= i) completed)
       extraWant <- pure $ (getRawDepsFromRawName sb i) ++ is
       want <- pure $ filter (\x -> not $ List.any (\y -> y == x) newHave) extraWant
@@ -176,9 +175,7 @@ moduleLoadService ::
 moduleLoadService sb@(StaticBuildInfo versionString modVersions depmap) loadModules (request,reply) =
   forever $ do
     (name, usedRawNames) <- readChan request
-    putStrLn $ "usedRawNames " ++ (show usedRawNames)
-    interfacesRaw <- buildOutInterfaceList sb [] (trace usedRawNames)
-    putStrLn $ "buildOutInterfaceList input " ++ (show usedRawNames) ++ " output " ++ (show interfacesRaw)
+    interfacesRaw <- buildOutInterfaceList sb [] usedRawNames
     interfaces <- pure $ concatMap (C.canonicalNameMatchingRaw sb) interfacesRaw
     moduleRequestArray <- mapM (moduleRequestValue versionString) interfaces
     moduleRequests <- JS.toJSArray moduleRequestArray
@@ -251,15 +248,11 @@ compile ::
   JSRef a ->
   IO ()
 compile sb@(StaticBuildInfo versionString modVersions depmap) (CommChannels compileRequestInterface requestReadInterface replyReadInterface requestObjInterface replyObjInterface compileReplyInterface) arg = do
-  putStrLn "compile: Starting"
-
   array <- JS.fromJSArray arg
   sourceJS <- pure $ array !! 0
   callback <- pure $ array !! 1
 
   source <- pure $ JS.fromJSString sourceJS
-
-  putStrLn $ "Got source " ++ source
 
   writeChan compileRequestInterface source
   (localizer, warnings, result) <- readChan compileReplyInterface
@@ -279,12 +272,9 @@ compile sb@(StaticBuildInfo versionString modVersions depmap) (CommChannels comp
     Right (CompileResult (EC.Result docs interface js) (name, deps)) ->
       linkAndDeliver sb requestObjInterface replyObjInterface callback (LazyText.unpack js) name deps
 
-  putStrLn "compile: kicked off"
-
 moduleVersionFromJS arr = do
   c <- canonicalNameAndVersionFromJS arr
   (CanonicalNameAndVersion (ECM.Canonical (Name user project) rawName) version) <- pure c
-  putStrLn $ "modVersions in " ++ (show c)
   return (rawName, c)
 
 rawNameFromJSArray arr = do
@@ -301,13 +291,9 @@ initCompiler modVersionsJS load callback =
   let (Version major minor patch) = EC.version in
   let versionString = List.intercalate "." (map show [major, minor, patch]) in
   do
-    putStrLn "initCompiler : Starting"
-
     loadArray <- JS.fromJSArray load
     loadJSObj <- pure $ loadArray !! 0
     loadModules <- pure $ loadArray !! 1
-
-    putStrLn "initCompler : 2"
 
     requestReadInterface <- newChan
     replyReadInterface <- newChan
@@ -320,11 +306,7 @@ initCompiler modVersionsJS load callback =
 
     (modVersions, modGraph) <- moduleVersionsFromJS modVersionsJS
 
-    putStrLn "initCompler : 3"
-
     staticBuildInfo <- pure $ StaticBuildInfo versionString modVersions modGraph
-
-    putStrLn "initCompler : 4"
 
     forkIO $
       C.compileCodeService
@@ -358,8 +340,6 @@ initCompiler modVersionsJS load callback =
             compileReplyInterface
           )
         )
-
-    putStrLn "initCompiler: Calling back"
 
     runAction callback compileCallback
 
