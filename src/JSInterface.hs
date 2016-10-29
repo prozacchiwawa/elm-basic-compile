@@ -193,8 +193,9 @@ objectFileRequestValue ::
   IO (JSRef a)
 objectFileRequestValue sb@(StaticBuildInfo versionString modVersions modGraph) rawName =
   do
-    objFileName <- pure $
-      (C.canonicalNameMatchingRaw sb rawName)
+    canonicalNames <- pure $ lookupModuleFromVersions sb rawName
+    putStrLn $ "/* " ++ (show canonicalNames) ++ " */"
+    objFileName <- pure $ canonicalNames
       & concatMap
           (\(CanonicalNameAndVersion (ECM.Canonical (Name user project) rawName) version) ->
             objName

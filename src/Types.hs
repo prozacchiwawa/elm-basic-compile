@@ -50,4 +50,14 @@ lookupModuleFromVersions ::
   ECM.Raw ->
   [CanonicalNameAndVersion]
 lookupModuleFromVersions (StaticBuildInfo versionString modVersions modGraph) rawName =
-  concatMap (\(n,m) -> if n == rawName then [m] else []) modVersions
+  let findRawName = case rawName of
+               "Native" : tl -> tl
+               l -> l
+  in
+  concatMap
+    (\ (n,CanonicalNameAndVersion (ECM.Canonical (Name u p) rn) v) ->
+      if n == findRawName then
+        [CanonicalNameAndVersion (ECM.Canonical (Name u p) rawName) v]
+      else
+        []
+    ) modVersions

@@ -164,6 +164,7 @@ function promiseOneObject(name) {
 function textFilesRequest(req) {
     var requests = req[0];
     var loaded = req[1];
+    console.log('/*', requests, '*/');
     q.all(requests.map(promiseOneObject)).then(function(modules) {
     modules[0] += jsprelude.join('\n');
         loaded(modules);
@@ -173,7 +174,6 @@ function textFilesRequest(req) {
 function binaryFilesRequest(req) {
     var requests = req[0];
     var loaded = req[1];
-    console.log('requested binary files',JSON.stringify(requests, null, 4));
     function promiseOneModule(name) {
         return promiseOneObject(name[0]).then(function(text) {
             return [name[1], btoa(text)];
@@ -188,11 +188,9 @@ module.exports.init = function() {
     var d = q.defer();
 
     promiseOneObject('/elm-stuff/exact-dependencies.json').then(function(text) {
-        console.log('text', text);
         return JSON.parse(text);
     }).then(function(exactDeps) {
         var deps = [];
-        console.log('exactDeps', exactDeps);
         for (var i in exactDeps) {
             deps.push([i.split('/'),exactDeps[i]]);
         }
@@ -215,7 +213,6 @@ module.exports.init = function() {
     }).then(function(depsAndMods) {
         return [depsAndMods[0], Array.prototype.concat.apply([], depsAndMods[1])];
     }).then(function(depsAndMods) {
-        console.log('depsAndMods',JSON.stringify(depsAndMods, null, 4));
         var deps = depsAndMods[0];
         var mods = depsAndMods[1];
         return q.all(
@@ -229,7 +226,6 @@ module.exports.init = function() {
           return [mods, graphs];
         });
     }).then(function(modsAndGraphs) {
-        //console.log(JSON.stringify(modsAndGraphs, null, 4));
         elmBasicCompile.initCompiler(
           	modsAndGraphs,
             textFilesRequest,
