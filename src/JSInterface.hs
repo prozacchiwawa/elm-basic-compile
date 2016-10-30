@@ -56,6 +56,18 @@ the version number.
 -}
 fileName versionString (CanonicalNameAndVersion (ECM.Canonical (Name user project) modPath) version) =
   let hyphenate rawName = List.intercalate "-" rawName in
+  List.intercalate "/"
+           [ "elm-stuff"
+           , "build-artifacts"
+           , versionString
+           , user
+           , project
+           , version
+           , (hyphenate modPath) ++ ".elmi"
+           ]
+
+objName versionString (CanonicalNameAndVersion (ECM.Canonical (Name user project) modPath) version) =
+  let hyphenate rawName = List.intercalate "-" rawName in
   case modPath of
     "Native" : rawName ->
       List.intercalate "/"
@@ -78,18 +90,6 @@ fileName versionString (CanonicalNameAndVersion (ECM.Canonical (Name user projec
         , version
         , (hyphenate modPath) ++ ".elmo"
         ]
-
-objName versionString (CanonicalNameAndVersion (ECM.Canonical (Name user project) modPath) version) =
-  let hyphenate rawName = List.intercalate "-" rawName in
-  List.intercalate "/"
-           [ "elm-stuff"
-           , "build-artifacts"
-           , versionString
-           , user
-           , project
-           , version
-           , (hyphenate modPath) ++ ".elmo"
-           ]
 
 {- Given a module reply from javascript, forward a reply to the compiler with
 appropriate deserialization.
