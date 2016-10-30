@@ -56,15 +56,28 @@ the version number.
 -}
 fileName versionString (CanonicalNameAndVersion (ECM.Canonical (Name user project) modPath) version) =
   let hyphenate rawName = List.intercalate "-" rawName in
-  List.intercalate "/"
-           [ "elm-stuff"
-           , "build-artifacts"
-           , versionString
-           , user
-           , project
-           , version
-           , (hyphenate modPath) ++ ".elmi"
-           ]
+  case modPath of
+    "Native" : rawName ->
+      List.intercalate "/"
+        [ "elm-stuff"
+        , "packages"
+        , user
+        , project
+        , version
+        , "src"
+        , "Native"
+        , (hyphenate rawName) ++ ".js"
+        ]
+    rawName ->
+      List.intercalate "/"
+        [ "elm-stuff"
+        , "build-artifacts"
+        , versionString
+        , user
+        , project
+        , version
+        , (hyphenate modPath) ++ ".elmo"
+        ]
 
 objName versionString (CanonicalNameAndVersion (ECM.Canonical (Name user project) modPath) version) =
   let hyphenate rawName = List.intercalate "-" rawName in
