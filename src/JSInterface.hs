@@ -128,18 +128,20 @@ setOfNameAndVersionFromCanonicalNameAndVersionList cnvlist =
 depMapsMatchingNameAndVersionSet ::
   [NameAndVersionWithGraph] ->
   Set.Set NameAndVersion ->
-  [DepMap]
-depMapsMatchingNameAndVersionSet depmap nvSet =
-  depmap
+  IO [DepMap]
+depMapsMatchingNameAndVersionSet depmap nvSet = do
+  result <- pure $ depmap
     & filter (\(NameAndVersionWithGraph nv g) -> Set.member nv nvSet)
     & map (\(NameAndVersionWithGraph nv g) -> g)
+  return result
 
-lookupGraphFromRawName :: StaticBuildInfo -> ECM.Raw -> [DepMap]
+lookupGraphFromRawName :: StaticBuildInfo -> ECM.Raw -> IO [DepMap]
 lookupGraphFromRawName sb@(StaticBuildInfo versionString modVersions depmap) raw =
   let canonicalNameAndVersionListForRawName = moduleCanonicalNameAndVersionListForRawName raw modVersions in
-  let nameAndVersionSet = setOfNameAndVersionFromCanonicalNameAndVersionList canonicalNameAndVersionListForRawName in
-  depMapsMatchingNameAndVersionSet depmap nameAndVersionSet
-
+  do
+    nameAndVersionSet <- pure $ setOfNameAndVersionFromCanonicalNameAndVersionList canonicalNameAndVersionListForRawName
+    depMapsMatchingNameAndVersionSet depmap nameAndVersionSet
+    
 canonicalModulesFromDepMap ::
   DepMap ->
   [CanonicalModule]
@@ -156,25 +158,45 @@ getRawNamesFromDepMap g =
 getRawDepsFromRawName ::
   StaticBuildInfo ->
   ECM.Raw ->
-  [ECM.Raw]
-getRawDepsFromRawName sb@(StaticBuildInfo versionString modVersions depmap) raw =
-  lookupGraphFromRawName sb raw
-    & concatMap getRawNamesFromDepMap
+  IO [ECM.Raw]
+getRawDepsFromRawName sb@(StaticBuildInfo versionString modVersions depmap) raw = do
+  lookedUp <- lookupGraphFromRawName sb raw
+  depsFromLookedUp <- pure $ map getRawNamesFromDepMap lookedUp
+  putStrLn $ "depsFromLookedUp " ++ (show raw) ++ " -> " ++ (show depsFromLookedUp)
+  return $ concat depsFromLookedUp & filter (\m -> m /= raw)
+
+buildOutInterfaceListInner ::
+  StaticBuildInfo ->
+  [ECM.Raw] ->
+  [(ECM.Raw, [ECM.Raw])] ->
+  IO [ECM.Raw]
+buildOutInterfaceListInner sb@(StaticBuildInfo versionString modVersions depmap) completed desired =
+  case desired of
+    [] -> do
+      return completed
+    (i,[]) : is -> do
+      buildOutInterfaceListInner sb (i : completed) is
+    (i,(d : ds)) : is -> do
+      allnames <- pure $ completed ++ (map fst desired) ++ [d]
+      filteredHave <- pure $ map (\(n,deps) -> (n,filter (\dd -> dd /= d) deps)) desired
+      rawDepsFromRawName <- getRawDepsFromRawName sb d
+      filteredDeps <- pure $ filter (\n -> not $ List.any (\(x,_) -> x /= n) filteredHave) rawDepsFromRawName
+      newDesired <- pure $ ((d,filteredDeps) : filteredHave)
+      putStrLn $ "buildOut " ++ (show completed) ++ " " ++ (show newDesired)
+      buildOutInterfaceListInner sb completed newDesired
 
 buildOutInterfaceList ::
   StaticBuildInfo ->
   [ECM.Raw] ->
-  [ECM.Raw] ->
   IO [ECM.Raw]
-buildOutInterfaceList sb@(StaticBuildInfo versionString modVersions depmap) completed desired =
+buildOutInterfaceList sb@(StaticBuildInfo versionString modVersions depmap) desired =
   case desired of
     [] -> do
-      return completed
-    i : is -> do
-      newHave <- pure $ i : (filter (\x -> x /= i) completed)
-      extraWant <- pure $ (getRawDepsFromRawName sb i) ++ is
-      want <- pure $ filter (\x -> not $ List.any (\y -> y == x) newHave) extraWant
-      buildOutInterfaceList sb newHave want
+      return []
+    l -> do
+      immediateDeps <- mapM (getRawDepsFromRawName sb) l
+      namesAndDeps <- pure $ zip l immediateDeps
+      buildOutInterfaceListInner sb [] namesAndDeps
 
 {- An async loop that receives module load requests from the compiler,
 forwards them through interop with a callback that sends the results back
@@ -188,7 +210,7 @@ moduleLoadService ::
 moduleLoadService sb@(StaticBuildInfo versionString modVersions depmap) loadModules (request,reply) =
   forever $ do
     (name, usedRawNames) <- readChan request
-    interfacesRaw <- buildOutInterfaceList sb [] usedRawNames
+    interfacesRaw <- buildOutInterfaceList sb usedRawNames
     interfaces <- pure $ concatMap (C.canonicalNameMatchingRaw sb) interfacesRaw
     moduleRequestArray <- mapM (moduleRequestValue versionString) interfaces
     moduleRequests <- JS.toJSArray moduleRequestArray
@@ -242,7 +264,7 @@ linkAndDeliver ::
   IO ()
 linkAndDeliver sb@(StaticBuildInfo versionString modVersions depmap) requestObjInterface replyObjInterface callback js name deps =
   do
-    emitOrderNameList <- buildOutInterfaceList sb [] deps
+    emitOrderNameList <- buildOutInterfaceList sb deps
     writeChan requestObjInterface (map rawNameFromCanonicalNameAndVersion (concatMap (lookupModuleFromVersions sb) emitOrderNameList))
     jsObjectData <- readChan replyObjInterface
 
@@ -305,6 +327,8 @@ initCompiler modVersionsJS load callback =
   let (Version major minor patch) = EC.version in
   let versionString = List.intercalate "." (map show [major, minor, patch]) in
   do
+    putStrLn "starting compiler"
+
     loadArray <- JS.fromJSArray load
     loadJSObj <- pure $ loadArray !! 0
     loadModules <- pure $ loadArray !! 1
@@ -354,6 +378,8 @@ initCompiler modVersionsJS load callback =
             compileReplyInterface
           )
         )
+
+    putStrLn "returning control"
 
     runAction callback compileCallback
 
