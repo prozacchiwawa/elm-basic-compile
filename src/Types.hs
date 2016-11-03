@@ -50,14 +50,23 @@ lookupModuleFromVersions ::
   ECM.Raw ->
   [CanonicalNameAndVersion]
 lookupModuleFromVersions (StaticBuildInfo versionString modVersions modGraph) rawName =
-  let findRawName = case rawName of
-               "Native" : tl -> tl
-               l -> l
+  let lookupResult frn = concatMap
+                         (\ (n,CanonicalNameAndVersion (ECM.Canonical (Name u p) rn) v) ->
+                            if n == frn then
+                              [CanonicalNameAndVersion (ECM.Canonical (Name u p) rawName) v]
+                            else
+                              []
+                         ) modVersions
   in
-  concatMap
-    (\ (n,CanonicalNameAndVersion (ECM.Canonical (Name u p) rn) v) ->
-      if n == findRawName then
-        [CanonicalNameAndVersion (ECM.Canonical (Name u p) rawName) v]
-      else
-        []
-    ) modVersions
+    if any (\x -> x == rawName) [["Native","Scheduler"],["Native","Utils"],["Native","Json"]] then
+      {- module that has only a native, not an elm input -}
+      let res = lookupResult ["Basics"] in
+        map
+        (\(CanonicalNameAndVersion (ECM.Canonical (Name u p) _) v) ->
+            (CanonicalNameAndVersion (ECM.Canonical (Name u p) rawName) v)
+        )
+        res
+    else
+      case rawName of
+        "Native" : tl -> lookupResult tl
+        l -> lookupResult l
