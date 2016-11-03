@@ -162,7 +162,6 @@ getRawDepsFromRawName ::
 getRawDepsFromRawName sb@(StaticBuildInfo versionString modVersions depmap) raw = do
   lookedUp <- lookupGraphFromRawName sb raw
   depsFromLookedUp <- pure $ map getRawNamesFromDepMap lookedUp
-  putStrLn $ "depsFromLookedUp " ++ (show raw) ++ " -> " ++ (show depsFromLookedUp)
   return $ concat depsFromLookedUp & filter (\m -> m /= raw)
 
 buildOutInterfaceListInner ::
@@ -173,17 +172,18 @@ buildOutInterfaceListInner ::
 buildOutInterfaceListInner sb@(StaticBuildInfo versionString modVersions depmap) completed desired =
   case desired of
     [] -> do
-      return completed
-    (i,[]) : is -> do
-      buildOutInterfaceListInner sb (i : completed) is
+      return $ List.reverse completed
+    (i,[]) : is ->
+      if any (\x -> x == i) completed then do
+        buildOutInterfaceListInner sb completed is
+      else do
+        buildOutInterfaceListInner sb (i : completed) is
     (i,(d : ds)) : is -> do
-      allnames <- pure $ completed ++ (map fst desired) ++ [d]
-      filteredHave <- pure $ map (\(n,deps) -> (n,filter (\dd -> dd /= d) deps)) desired
       rawDepsFromRawName <- getRawDepsFromRawName sb d
-      filteredDeps <- pure $ filter (\n -> not $ List.any (\(x,_) -> x /= n) filteredHave) rawDepsFromRawName
-      newDesired <- pure $ ((d,filteredDeps) : filteredHave)
-      putStrLn $ "buildOut " ++ (show completed) ++ " " ++ (show newDesired)
-      buildOutInterfaceListInner sb completed newDesired
+      (matched, unmatched) <- pure $ partition (\(x,deps) -> x == d) is
+      newTail <- pure $ if any (\x -> x == d) ((map fst desired) ++ completed) then matched ++ [(i,ds)] ++ unmatched else (d,rawDepsFromRawName) : ((i,ds) : is)
+      putStrLn $ "/* buildOut " ++ (show completed) ++ " " ++ (show newTail) ++ " */"
+      buildOutInterfaceListInner sb completed newTail
 
 buildOutInterfaceList ::
   StaticBuildInfo ->
@@ -327,8 +327,6 @@ initCompiler modVersionsJS load callback =
   let (Version major minor patch) = EC.version in
   let versionString = List.intercalate "." (map show [major, minor, patch]) in
   do
-    putStrLn "starting compiler"
-
     loadArray <- JS.fromJSArray load
     loadJSObj <- pure $ loadArray !! 0
     loadModules <- pure $ loadArray !! 1
@@ -378,8 +376,6 @@ initCompiler modVersionsJS load callback =
             compileReplyInterface
           )
         )
-
-    putStrLn "returning control"
 
     runAction callback compileCallback
 
