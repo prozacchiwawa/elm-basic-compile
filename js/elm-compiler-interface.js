@@ -164,9 +164,13 @@ function promiseOneObject(name) {
 function textFilesRequest(req) {
     var requests = req[0];
     var loaded = req[1];
-    console.log('/*', requests, '*/');
-    q.all(requests.map(promiseOneObject)).then(function(modules) {
-    modules[0] += jsprelude.join('\n');
+    function promiseOneModule(name) {
+        return promiseOneObject(name[1]).then(function(text) {
+            return [name[0], text];
+        });
+    }
+    q.all(requests.map(promiseOneModule)).then(function(modules) {
+        modules[0][1] += jsprelude.join('\n');
         loaded(modules);
     });
 }
