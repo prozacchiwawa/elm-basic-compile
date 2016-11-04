@@ -7,6 +7,7 @@ var baseURL = 'http://superheterodyne.net/files/';
 var compile = { };
 
 var jsprelude = [
+  "(function() {",
   "'use strict';",
   "function F2(fun)",
   "{",
@@ -141,6 +142,42 @@ var jsprelude = [
   "}"
 ];
 
+var footer = [
+    "var Elm = {};",
+    "Elm['Main'] = Elm['Main'] || {};",
+    "_elm_lang$core$Native_Platform.addPublicModule(Elm['Main'], 'Main', typeof _elm_lang$test$Main$main === 'undefined' ? null : _elm_lang$test$Main$main);",
+    "",
+    "if (typeof define === 'function' && define['amd'])",
+    "{",
+    "  define([], function() { return Elm; });",
+    "  return;",
+    "}",
+    "",
+    "if (typeof module === 'object')",
+    "{",
+    "  module['exports'] = Elm;",
+    "  return;",
+    "}",
+    "",
+    "var globalElm = this['Elm'];",
+    "if (typeof globalElm === 'undefined')",
+    "{",
+    "  this['Elm'] = Elm;",
+    "  return;",
+    "}",
+    "",
+    "for (var publicModule in Elm)",
+    "{",
+    "  if (publicModule in globalElm)",
+    "  {",
+    "    throw new Error('There are two Elm modules called `' + publicModule + '` on this page! Rename one of them.');",
+    "  }",
+    "  globalElm[publicModule] = Elm[publicModule];",
+    "}",
+    "",
+    "}).call(this);"
+];
+
 function promiseOneObject(name) {
     var d = q.defer();
     if (name == '') {
@@ -170,7 +207,6 @@ function textFilesRequest(req) {
         });
     }
     q.all(requests.map(promiseOneModule)).then(function(modules) {
-        modules[0][1] += jsprelude.join('\n');
         loaded(modules);
     });
 }
@@ -238,8 +274,11 @@ module.exports.init = function() {
           	    d.resolve({
               		compile: function(source) {
               		    var d = q.defer();
+                        var dd = d.promise.then(function(res) {
+                            return [jsprelude.join('\n'),res,footer.join('\n')].join('\n');
+                        });
               		    compile([source, d.resolve]);
-              		    return d.promise;
+              		    return dd;
               		}
           	    });
             }

@@ -1,13 +1,9 @@
 var eci = require('./elm-compiler-interface.js');
 eci.init().then(function(compiler) {
-    var inputCode = document.getElementById('input-code');
-    var resultCode = document.getElementById('compiled-code');
-    var compileButton = document.getElementById('compile-button');
-    inputCode.disabled = false;
-    compileButton.disabled = false;
-    compileButton.addEventListener('click', function() {
-	compiler.compile(inputCode.value).then(function(result) {
-	    resultCode.value = result;
-	});
-    });
+    window.postMessage({msg: 'elm-compiler'}, window.location.href);
+    window.compile = function(source,next) {
+        compiler.compile(source).then(function(result) {
+            next(result);
+        });
+    };
 });
