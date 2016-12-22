@@ -35,7 +35,6 @@ import Elm.Package
 import Elm.Package.Solution
 
 import TheMasterPlan
-import BuildManager as BM
 
 #ifdef __GHCJS__
 
@@ -215,7 +214,7 @@ moduleLoadService ::
   JSRef a ->
   (Chan (ECM.Raw, [ECM.Raw]), Chan [(CanonicalNameAndVersion, ECM.Interface)]) ->
   IO ()
-moduleLoadService sb@(StaticBuildInfo versionString modVersions depmap) loadModules (request,reply) =
+moduleLoadService sb@(StaticBuildInfo (NameAndVersion name versionString) modVersions depmap) loadModules (request,reply) =
   forever $ do
     (name, usedRawNames) <- readChan request
     interfacesRaw <- pure $ buildOutInterfaceList (getRawDepsFromRawName sb) usedRawNames
@@ -292,7 +291,7 @@ objectFileRequestValue ::
   StaticBuildInfo ->
   ECM.Raw ->
   IO [JSRef a]
-objectFileRequestValue sb@(StaticBuildInfo versionString modVersions modGraph) rawName =
+objectFileRequestValue sb@(StaticBuildInfo (NameAndVersion name versionString) modVersions modGraph) rawName =
   do
     canonicalNames <- pure $ lookupModuleFromVersions sb rawName
     putStrLn $ "/* " ++ (show canonicalNames) ++ " */"
@@ -353,14 +352,14 @@ compile ::
   CommChannels ->
   JSRef a ->
   IO ()
-compile sb@(StaticBuildInfo versionString modVersions depmap) (CommChannels compileRequestInterface requestReadInterface replyReadInterface requestObjInterface replyObjInterface compileReplyInterface) arg = do
+compile sb@(StaticBuildInfo (NameAndVersion name versionString) modVersions depmap) (CommChannels compileRequestInterface requestReadInterface replyReadInterface requestObjInterface replyObjInterface compileReplyInterface) arg = do
   array <- JS.fromJSArray arg
   sourceJS <- pure $ array !! 0
   callback <- pure $ array !! 1
 
   source <- pure $ JS.fromJSString sourceJS
 
-  writeChan compileRequestInterface source
+  writeChan compileRequestInterface (name, source)
   (localizer, warnings, result) <- readChan compileReplyInterface
 
   case result of
@@ -395,6 +394,7 @@ to serve the goal of compiling elm code.
 initCompiler :: JSRef a -> JSRef a -> JSRef a -> IO ()
 initCompiler modVersionsJS load callback =
   let (Version major minor patch) = EC.version in
+  let name = Name { user = "elm-lang", project = "test" } in
   let versionString = List.intercalate "." (map show [major, minor, patch]) in
   do
     loadArray <- JS.fromJSArray load
@@ -412,7 +412,7 @@ initCompiler modVersionsJS load callback =
 
     (modVersions, modGraph) <- moduleVersionsFromJS modVersionsJS
 
-    staticBuildInfo <- pure $ StaticBuildInfo versionString modVersions modGraph
+    staticBuildInfo <- pure $ StaticBuildInfo (NameAndVersion name versionString) modVersions modGraph
 
     forkIO $
       C.compileCodeService

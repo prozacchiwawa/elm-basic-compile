@@ -1,5 +1,5 @@
 Name: elm-basic-compile
-Version: 0.17
+Version: 0.18
 
 Synopsis:
     A demonstration tool for running the compiler in javascript.
@@ -53,9 +53,9 @@ Executable elm-basic-compile
         bytestring,
         containers >= 0.3,
         directory,
-        elm-compiler == 0.17,
-        elm-make == 0.17,
-        elm-package == 0.17,
+        elm-compiler == 0.18,
+        elm-package == 0.18,
+        elm-make == 0.18,
         filepath,
         ghcjs-base,
         ghcjs-prim,

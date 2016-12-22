@@ -17,6 +17,8 @@ import Types
 import qualified Utils.File
 import Utils.Misc
 
+type RawName = [String]
+
 -- import AST.Declaration import AST.Variable import AST.Module import AST.Module.Name import
 -- AST.Type
 {-
@@ -86,7 +88,7 @@ compile :: Context -> String -> Elm.Package.Interfaces -> *stuff* :-)
 -}
 
 -- Modules matched to the default imports
-importModules :: [ECM.Raw]
+importModules :: [RawName]
 importModules = [ ["Basics"]
                 , ["Debug"]
                 , ["List"]
@@ -99,26 +101,25 @@ importModules = [ ["Basics"]
 
 canonicalNameMatchingRaw ::
   StaticBuildInfo ->
-  ECM.Raw ->
+  RawName ->
   [CanonicalNameAndVersion]
 canonicalNameMatchingRaw (StaticBuildInfo versionString modVersions modGraph) rawName =
   modVersions
-    & concatMap (\(rn, (CanonicalNameAndVersion canonical version)) -> if rn == rawName then [CanonicalNameAndVersion canonical version] else [])
+    & concatMap (\(rn, CanonicalNameAndVersion canonical version) -> [CanonicalNameAndVersion canonical version | rn == rawName])
 
 singletonLookup ::
   StaticBuildInfo ->
-  ECM.Raw ->
+  RawName ->
   IO [CanonicalNameAndVersion]
 singletonLookup (StaticBuildInfo versionString modVersions modGraph) rawName = do
   lookedUp <- pure $ lookup rawName modVersions
-  listed <- pure $ maybeToList $ lookedUp
-  return listed
+  pure $ maybeToList lookedUp
 
 moduleRequestListRight ::
   StaticBuildInfo ->
-  ECM.Raw ->
-  [ECM.Raw] ->
-  IO (ECM.Raw, [ECM.Raw])
+  RawName ->
+  [RawName] ->
+  IO (RawName, [RawName])
 moduleRequestListRight sb@(StaticBuildInfo versionString modVersions modGraph) myname imports =
   do
     allNames <- pure $ List.union imports importModules
@@ -128,14 +129,14 @@ moduleRequestListRight sb@(StaticBuildInfo versionString modVersions modGraph) m
 
 moduleRequestList ::
   StaticBuildInfo ->
-  Either [Error] (Tag, ECM.Raw, [ECM.Raw]) ->
-  IO (ECM.Raw, [ECM.Raw])
+  Either [Error] (Tag, RawName, [RawName]) ->
+  IO (RawName, [RawName])
 moduleRequestList sb@(StaticBuildInfo versionString modVersions modGraph) parseResult =
   -- Make a list of the names of modules we need to import
   case parseResult of
-    Left errors -> do
+    Left errors ->
       return ([],[])
-    Right (_, myname, imports) -> do
+    Right (_, myname, imports) ->
       moduleRequestListRight sb myname imports
 
 performCompilation ::
@@ -156,7 +157,7 @@ performCompilation usedModuleNames interfaces source =
     -- Make the interface map that the compiler consumes
     let interfaceMap = interfaces
             & map
-                (\((CanonicalNameAndVersion canonical version), interface) ->
+                (\(CanonicalNameAndVersion canonical version, interface) ->
                     (canonical, interface))
             & Map.fromList in
 
@@ -171,15 +172,15 @@ performCompilation usedModuleNames interfaces source =
 
 compileCodeService ::
   StaticBuildInfo ->
-  Chan String ->
-  (Chan (ECM.Raw, [ECM.Raw]), Chan [(CanonicalNameAndVersion, ECM.Interface)]) ->
+  Chan (EP.Name, String) ->
+  (Chan (RawName, [RawName]), Chan [(CanonicalNameAndVersion, ECM.Interface)]) ->
   Chan (Localizer, [Warning], Either [Error] CompileResult) ->
   IO ()
 compileCodeService sb@(StaticBuildInfo versionString moduleVersions modGraph) requestChan (modReqChan, modReplyChan) compiledCode =
   forever $ do
-    source <- readChan requestChan
+    (name, source) <- readChan requestChan
 
-    usedModulesResult <- pure $ EC.parseDependencies source
+    usedModulesResult <- pure $ EC.parseDependencies name source
     (name, usedModuleNames) <- moduleRequestList sb usedModulesResult
 
     -- Request read of needed interfaces

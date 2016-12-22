@@ -257,7 +257,7 @@ module.exports.init = function() {
         var mods = depsAndMods[1];
         return q.all(
             deps.map(function(nameAndVersion) {
-                var fileName = 'elm-stuff/build-artifacts/0.17.0/' + nameAndVersion[0].join('/') + '/' + nameAndVersion[1] + '/graph.dat';
+                var fileName = 'elm-stuff/build-artifacts/0.18.0/' + nameAndVersion[0].join('/') + '/' + nameAndVersion[1] + '/graph.dat';
                 return promiseOneObject(fileName).then(function(text) {
                     return [nameAndVersion, btoa(text)];
                 });

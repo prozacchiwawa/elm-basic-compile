@@ -5,7 +5,7 @@ import Data.Function
 
 import Elm.Compiler as EC
 import Elm.Compiler.Module as ECM
-import Elm.Package
+import Elm.Package as EP
 import TheMasterPlan
 
 data CanonicalNameAndVersion = CanonicalNameAndVersion ECM.Canonical String
@@ -16,14 +16,14 @@ data NameAndVersion = NameAndVersion Name String deriving (Ord, Eq, Show)
 data NameAndVersionWithGraph = NameAndVersionWithGraph NameAndVersion DepMap
 
 data StaticBuildInfo = StaticBuildInfo
-    String
+    NameAndVersion
     [(ECM.Raw, CanonicalNameAndVersion)]
     [NameAndVersionWithGraph]
 
 {- A container type for the communication channels we use with the elm compiler.
 -}
 data CommChannels = CommChannels
-    (Chan String)
+    (Chan (EP.Name,String))
     (Chan (ECM.Raw, [ECM.Raw]))
     (Chan [(CanonicalNameAndVersion, ECM.Interface)])
     (Chan [ECM.Raw])
