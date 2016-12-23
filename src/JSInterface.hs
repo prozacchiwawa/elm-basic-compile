@@ -34,8 +34,6 @@ import Utils.Misc
 import Elm.Package
 import Elm.Package.Solution
 
-import TheMasterPlan
-
 #ifdef __GHCJS__
 
 import GHCJS.Types

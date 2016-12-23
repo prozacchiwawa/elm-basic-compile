@@ -150,7 +150,7 @@ performCompilation usedModuleNames interfaces source =
         , _isExposed = False
         , _dependencies =
              map
-                (\(CanonicalNameAndVersion (ECM.Canonical (Name user project) rawName) version) -> (ECM.Canonical (Name user project) rawName))
+                (\(CanonicalNameAndVersion ec version) -> ec)
                 usedModuleNames
         }
     in

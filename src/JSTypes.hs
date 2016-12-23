@@ -11,6 +11,7 @@ module JSTypes where
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy.Char8 as C8S
 import qualified Data.ByteString.Base64.Lazy as LB64
+import qualified Data.Map as Map
 
 import Types
 import qualified Elm.Compiler.Module as ECM
@@ -23,8 +24,6 @@ import GHCJS.Foreign
 import GHCJS.Foreign.Callback
 import GHCJS.Prim as JS
 import qualified Unsafe.Coerce as UCK
-
-import TheMasterPlan
 
 {- Wrap a 1-argument callback in asyncCallback1 and cast it to a consumable
 type for interop.  The short answer is that I'm likely missing an imported type
@@ -113,35 +112,24 @@ base64StringToInterface b64 =
           Right (_, _, value) ->
             return value
 
-base64StringToBuildData ::
-  String ->
-  IO (TheMasterPlan.ProjectGraph Location)
-base64StringToBuildData b64 =
-  let bytestring = C8S.pack b64 in
-  let bits = LB64.decode bytestring in
-  do
-    case bits of
-      Left e ->
-        ioError (userError e)
-      Right v ->
-        case Binary.decodeOrFail v of
-          Left (_, _, e) ->
-            ioError (userError e)
-
-          Right (_, _, value) ->
-            return value
-
 nameAndVersionFromJS :: JSVal -> IO NameAndVersion
 nameAndVersionFromJS jsArray = do
   array <- JS.fromJSArray jsArray
   nameArray <- JS.fromJSArray (array !! 0)
   return (NameAndVersion (Name (JS.fromJSString (nameArray !! 0)) (JS.fromJSString (nameArray !! 1))) (JS.fromJSString (array !! 1)))
 
+createProjectGraph :: JSVal -> ProjectGraph Location
+createProjectGraph jsArray =
+  ProjectGraph
+    { projectData = Map.fromList []
+    , projectNatives = Map.fromList []
+    }
+
 depMapRowFromJS :: JSVal -> IO NameAndVersionWithGraph
 depMapRowFromJS jsArray = do
   array <- JS.fromJSArray jsArray
   canonicalNameAndVersion <- nameAndVersionFromJS (array !! 0)
-  graphDat <- base64StringToBuildData (JS.fromJSString (array !! 1))
+  graphDat <- pure $ createProjectGraph (array !! 1)
   return $ NameAndVersionWithGraph canonicalNameAndVersion graphDat
 
 moduleVersionsFromJS :: JSVal -> IO ([(ECM.Raw, CanonicalNameAndVersion)], [NameAndVersionWithGraph])

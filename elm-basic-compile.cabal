@@ -26,7 +26,7 @@ Extra-source-files: README.md
 
 source-repository head
     type:     git
-    location: git://github.com/elm-lang/elm-make.git
+    location: git://github.com/prozacchiwawa/elm-basic-compile.git
 
 Executable elm-basic-compile
 
@@ -55,7 +55,6 @@ Executable elm-basic-compile
         directory,
         elm-compiler == 0.18,
         elm-package == 0.18,
-        elm-make == 0.18,
         filepath,
         ghcjs-base,
         ghcjs-prim,

@@ -1,17 +1,38 @@
 module Types where
 
 import Control.Concurrent
-import Data.Function
+import Data.Map as Map
 
 import Elm.Compiler as EC
 import Elm.Compiler.Module as ECM
 import Elm.Package as EP
-import TheMasterPlan
 
 data CanonicalNameAndVersion = CanonicalNameAndVersion ECM.Canonical String
     deriving (Ord, Eq, Show)
 
-type DepMap = TheMasterPlan.ProjectGraph Location
+data Package = Package EP.Name EP.Version deriving (Ord, Eq)
+
+data CanonicalModule = CanonicalModule
+  { package :: Types.Package
+  , name :: ECM.Raw
+  } deriving (Ord, Eq)
+
+data ProjectGraph a = ProjectGraph
+  { projectData :: Map.Map CanonicalModule (ProjectData a)
+  , projectNatives :: Map.Map CanonicalModule Location
+  }
+
+data ProjectData a = ProjectData
+  { projectLocation :: a
+  , projectDependencies :: [CanonicalModule]
+  }
+
+data Location = Location
+  { _relativePath :: FilePath
+  , _package :: Types.Package
+  }
+
+type DepMap = ProjectGraph Location
 data NameAndVersion = NameAndVersion Name String deriving (Ord, Eq, Show)
 data NameAndVersionWithGraph = NameAndVersionWithGraph NameAndVersion DepMap
 
@@ -51,9 +72,9 @@ lookupModuleFromVersions ::
   [CanonicalNameAndVersion]
 lookupModuleFromVersions (StaticBuildInfo versionString modVersions modGraph) rawName =
   let lookupResult frn = concatMap
-                         (\ (n,CanonicalNameAndVersion (ECM.Canonical (Name u p) rn) v) ->
+                         (\ (n,CanonicalNameAndVersion (ECM.Canonical name rn) v) ->
                             if n == frn then
-                              [CanonicalNameAndVersion (ECM.Canonical (Name u p) rawName) v]
+                              [CanonicalNameAndVersion (ECM.Canonical name rawName) v]
                             else
                               []
                          ) modVersions
@@ -61,7 +82,7 @@ lookupModuleFromVersions (StaticBuildInfo versionString modVersions modGraph) ra
     if any (\x -> x == rawName) [["Native","Scheduler"],["Native","Utils"],["Native","Json"]] then
       {- module that has only a native, not an elm input -}
       let res = lookupResult ["Basics"] in
-        map
+        Prelude.map
         (\(CanonicalNameAndVersion (ECM.Canonical (Name u p) _) v) ->
             (CanonicalNameAndVersion (ECM.Canonical (Name u p) rawName) v)
         )
