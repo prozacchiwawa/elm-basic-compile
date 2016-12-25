@@ -8,7 +8,7 @@ var testJson = {
     "exposed-modules": [],
     "dependencies": {
         "elm-lang/core": "5.0.0 <= v < 6.0.0",
-        "elm-lang/html": "1.0.0 <= v < 2.0.0"
+        "elm-lang/html": "2.0.0 <= v < 3.0.0"
     }
 };
 var ps = new epkg.PackageSolver(new GithubSource());
