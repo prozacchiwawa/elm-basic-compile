@@ -48,7 +48,6 @@ GithubSource.prototype.retrieveJson = function(projectSpec) {
     var url = "https://raw.githubusercontent.com/" + projectSpec.user + "/" + projectSpec.project + "/" + projectSpec.version + "/elm-package.json";
     var item = localStorage.getItem(url);
     if (item) {
-        console.log("q.fcall",url);
         return q.fcall(function() { return item; });
     } else {
         return promiseOneObject(url,false).then(function(json) {

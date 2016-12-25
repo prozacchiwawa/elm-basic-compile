@@ -24,6 +24,7 @@ function ElmPackage(retriever,projectSpec) {
     this.projectSpec = projectSpec;
     this.retriever = retriever;
     this.elmPackage = null;
+    this.buildSolution = null;
     var self = this;
     this.afterElmPackage = retriever.retrieveJson(projectSpec).then(function(pspec) {
         self.elmPackage = JSON.parse(pspec);
@@ -75,9 +76,10 @@ ElmPackage.prototype.findSourceFiles = function(modname) {
     }
 
     if (this.elmPackage == null) {
-        return this.afterElmPackage.then(function() {
+        this.afterElmPackage = this.afterElmPackage.then(function() {
             return createPromiseForFiles(modname);
         });
+        return this.afterElmPackage;
     } else {
         return createPromiseForFiles(modname);
     }
@@ -203,10 +205,25 @@ PackageSolver.prototype.solve = function(pspec) {
     this._runPackage(expr, pspec);
     var solution = this.solver.solve();
     if (!solution) {
+        this.buildSolution = null;
         return null;
     }
-    return solution.getTrueVars();
+    var deps = solution.getTrueVars();
+    var res = {};
+    for (var i = 0; i < deps.length; i++) {
+        var s = deps[i].split(':');
+        res[s[0]] = s[1];
+    }
+    this.buildSolution = res;
+    return res;
 }
+
+/*
+ * The haskell code can tell us what elmi files will be required to compile
+ * a specific module given a set of exact dependencies, which have been
+ * created by PackageSolver::solve.  We must however build to elmi.
+ */
+
 
 module.exports.ElmPackage = ElmPackage;
 module.exports.PackageSolver = PackageSolver;

@@ -59,14 +59,11 @@ canonicalNameFromJS ::
 canonicalNameFromJS jsObj =
   do
     obj <- JS.fromJSArray jsObj
-    modNameArray <- JS.fromJSArray (obj !! 0)
+    modName <- nameFromJS (obj !! 0)
     modPathArray <- JS.fromJSArray (obj !! 1)
     return (
       ECM.Canonical
-        (Name
-          (JS.fromJSString (modNameArray !! 0))
-          (JS.fromJSString (modNameArray !! 1))
-        )
+        modName
         (map JS.fromJSString modPathArray)
       )
 
@@ -112,11 +109,15 @@ base64StringToInterface b64 =
           Right (_, _, value) ->
             return value
 
+nameFromJS :: JSVal -> IO Name
+nameFromJS nameArrayJS = do
+  nameArray <- JS.fromJSArray nameArrayJS
+  return (Name (JS.fromJSString (nameArray !! 0)) (JS.fromJSString (nameArray !! 1)))
 nameAndVersionFromJS :: JSVal -> IO NameAndVersion
 nameAndVersionFromJS jsArray = do
   array <- JS.fromJSArray jsArray
-  nameArray <- JS.fromJSArray (array !! 0)
-  return (NameAndVersion (Name (JS.fromJSString (nameArray !! 0)) (JS.fromJSString (nameArray !! 1))) (JS.fromJSString (array !! 1)))
+  name <- nameFromJS (array !! 0)
+  return (NameAndVersion name (JS.fromJSString (array !! 1)))
 
 createProjectGraph :: JSVal -> ProjectGraph Location
 createProjectGraph jsArray =

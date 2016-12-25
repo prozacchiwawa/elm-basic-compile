@@ -2,6 +2,8 @@ var q = require('q');
 var XMLHttpRequest = XMLHttpRequest || require('xmlhttprequest').XMLHttpRequest;
 var btoa = btoa || require('btoa');
 var elmBasicCompile = require('./elm-basic-compile');
+var elmPackage = require('./elm-package');
+var githubSource = require('./github-source');
 
 var baseURL = 'http://superheterodyne.net/files/';
 var compile = { };
@@ -227,8 +229,25 @@ function binaryFilesRequest(req) {
 module.exports.init = function() {
     var d = q.defer();
 
-    promiseOneObject('/elm-stuff/exact-dependencies.json').then(function(text) {
-        return JSON.parse(text);
+    var currentPackage = {
+        "version": "1.0.0",
+        "summary": "package compiled via ghcjs and javascript",
+        "repository": "https://github.com/prozacchiwawa/test.git",
+        "license": "BSD3",
+        "source-directories": ["src"],
+        "exposed-modules": [],
+        "dependencies": {"elm-lang/core": "5.0.0 <= v < 6.0.0"},
+        "elm-version": "0.18.0 <= v < 0.19.0"
+    };
+    var packageSpec = {
+        user: "prozacchiwawa",
+        project: "test",
+        version: "1.0.0"
+    };
+    var ps = new elmPackage.PackageSolver(new githubSource.GithubSource());
+    ps.injectPackage(packageSpec, currentPackage);
+    ps.fillTree(packageSpec).then(function() {
+        return ps.solve(packageSpec);
     }).then(function(exactDeps) {
         var deps = [];
         for (var i in exactDeps) {
@@ -238,15 +257,13 @@ module.exports.init = function() {
     }).then(function(deps) {
         var mods = q.all(
             deps.map(function(nameAndVersion) {
-                var fileName = 'elm-stuff/packages/' + nameAndVersion[0].join('/') + '/' + nameAndVersion[1] + '/elm-package.json';
-                return promiseOneObject(fileName).then(function(text) {
-                    var data = JSON.parse(text);
-                    var exposedModules = data['exposed-modules'];
-                    var modsWithNames = exposedModules.map(function(modName) {
-                        return [[nameAndVersion[0], modName.split('.')], nameAndVersion[1]];
-                    });
-                    return modsWithNames;
+                var packageName = nameAndVersion[0].join('/');
+                var data = ps.versions[packageName][nameAndVersion[1]];
+                var exposedModules = data['exposed-modules'];
+                var modsWithNames = exposedModules.map(function(modName) {
+                    return [[nameAndVersion[0], modName.split('.')], nameAndVersion[1]];
                 });
+                return modsWithNames;
             })
         );
         return q.all([deps, mods]);
@@ -255,6 +272,9 @@ module.exports.init = function() {
     }).then(function(depsAndMods) {
         var deps = depsAndMods[0];
         var mods = depsAndMods[1];
+        var toBuildModules = deps.map(function(nameAndVersion) {
+            return {user: nameAndVersion[0][0], project: nameAndVersion[0][1], version: nameAndVersion[1]};
+        });
         return q.all(
             deps.map(function(nameAndVersion) {
                 var fileName = 'elm-stuff/build-artifacts/0.18.0/' + nameAndVersion[0].join('/') + '/' + nameAndVersion[1] + '/graph.dat';
@@ -270,8 +290,15 @@ module.exports.init = function() {
           	modsAndGraphs,
             textFilesRequest,
             binaryFilesRequest,
-          	function(compile) {
+          	function(parseAndCompile) {
+                var parse = parseAndCompile[0];
+                var compile = parseAndCompile[1];
           	    d.resolve({
+                    parse: function(name,source) {
+                        var d = q.defer();
+                        parse([name,source,d.resolve]);
+                        return d.promise;
+                    },
               		compile: function(source) {
               		    var d = q.defer();
                         var dd = d.promise.then(function(res) {
