@@ -49,12 +49,11 @@ GithubSource.prototype.retrieveJson = function(projectSpec) {
     var item = localStorage.getItem(url);
     if (item) {
         return q.fcall(function() { return item; });
-    } else {
-        return promiseOneObject(url,false).then(function(json) {
-            localStorage.setItem(url, json);
-            return json;
-        });
     }
+    return promiseOneObject(url,false).then(function(json) {
+        localStorage.setItem(url, json);
+        return json;
+    });
 }
 /*
  * Return a promise for a source file from a published elm project given
@@ -62,7 +61,15 @@ GithubSource.prototype.retrieveJson = function(projectSpec) {
  * string).  ext is the file extension to be retrieved.
  */
 GithubSource.prototype.retrieveSource = function(projectSpec,srcDir,modname,ext) {
-    return promiseOneObject("https://raw.githubusercontent.com/" + projectSpec.user + "/" + projectSpec.project + "/" + projectSpec.version + "/" + srcDir + "/" + modname.join("/") + "." + ext,false);
+    var url = "https://raw.githubusercontent.com/" + projectSpec.user + "/" + projectSpec.project + "/" + projectSpec.version + "/" + srcDir + "/" + modname.join("/") + "." + ext;
+    var item = localStorage.getItem(url);
+    if (item) {
+        return q.fcall(function() { return item; });
+    }
+    return promiseOneObject(url,false).then(function(source) {
+        localStorage.setItem(url, source);
+        return source;
+    });
 }
 /*
  * Return a list of packageSpec given a project name.
@@ -73,23 +80,21 @@ GithubSource.prototype.retrieveTags = function(projectName) {
     var url = "https://api.github.com/repos/" + projectName.user + "/" + projectName.project + "/tags";
     var item = localStorage.getItem(url);
     if (item) {
-        console.log("cache",JSON.parse(item));
         return q.fcall(function() { return JSON.parse(item); });
-    } else {
-        var params = {"User-Agent": "elm-basic-compile", "Accept": "application/json"};
-        var token = localStorage.getItem("apikey");
-        if (token) {
-            params.Authorization = "token " + token;
-        }
-        return promiseOneObject(url, true, params).then(function(tags) {
-            return JSON.parse(tags);
-        }).then(function(tags) {
-            return tags.map(function(tag) { return tag.name; });
-        }).then(function(tags) {
-            localStorage.setItem(url, JSON.stringify(tags));
-            return tags;
-        });
     }
+    var params = {"User-Agent": "elm-basic-compile", "Accept": "application/json"};
+    var token = localStorage.getItem("apikey");
+    if (token) {
+        params.Authorization = "token " + token;
+    }
+    return promiseOneObject(url, true, params).then(function(tags) {
+        return JSON.parse(tags);
+    }).then(function(tags) {
+        return tags.map(function(tag) { return tag.name; });
+    }).then(function(tags) {
+        localStorage.setItem(url, JSON.stringify(tags));
+        return tags;
+    });
 }
 
 module.exports.GithubSource = GithubSource;

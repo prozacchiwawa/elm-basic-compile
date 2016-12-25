@@ -23,8 +23,10 @@ var pv = require("./package-version");
 function ElmPackage(retriever,projectSpec) {
     this.projectSpec = projectSpec;
     this.retriever = retriever;
+    this.internalDeps = null;
     this.elmPackage = null;
-    this.buildSolution = null;
+    this.importsRe = /^\/\/[ ]*import[ ]+([^\/\n\r]*)\/\//m;
+    this.wsRe = /^\s+|\s+$/g;
     var self = this;
     this.afterElmPackage = retriever.retrieveJson(projectSpec).then(function(pspec) {
         self.elmPackage = JSON.parse(pspec);
@@ -85,6 +87,75 @@ ElmPackage.prototype.findSourceFiles = function(modname) {
     }
 }
 
+ElmPackage.prototype._expandPackageFullyStep = function(compiler,reachableSet,packageSpec,exposed) {
+    var self = this;
+    return q.all(exposed.map(function(mod) {
+        var modname = mod.split('.');
+        return self.findSourceFiles(mod.split(".")).then(function(sf) {
+            var s = {name: mod};
+            for (var i = 0; i < sf.length; i++) {
+                var ty = sf[i][0];
+                var sd = sf[i][1];
+                if (sd) {
+                    s[ty] = sd;
+                }
+            }
+            return s;
+        });
+    })).then(function(sources) {
+        return q.all(sources.map(function(s) {
+            if (reachableSet[s.name]) {
+                return s;
+            }
+            reachableSet[s.name] = s;
+            if (s.js) {
+                var jsImport = s.js.match(self.importsRe);
+                if (jsImport != null) {
+                    var importsStrip = jsImport[1].replace(self.wsRe, '');
+                    s.imports = importsStrip.split(',').map(function(i) {
+                        return i.replace(self.wsRe, '');
+                    }).filter(function(imp) {
+                        return imp !== '';
+                    }).filter(function(imp) {
+                        return !reachableSet[imp];
+                    });
+                    return self._expandPackageFullyStep(compiler,reachableSet,packageSpec,s.imports);
+                }
+            } else if (s.elm) {
+                return compiler.parse(s.name, s.elm).then(function(res) {
+                    s.imports = res[1].map(function(mod) {
+                        return mod.join(".");
+                    }).filter(function(imp) {
+                        return !reachableSet[imp];
+                    });
+                    return self._expandPackageFullyStep(compiler,reachableSet,packageSpec,s.imports);
+                });
+            } else {
+                s.imports = [];
+                self.internalDeps = reachableSet;
+                return reachableSet;
+            }
+        })).then(function() {
+            self.internalDeps = reachableSet;
+            return reachableSet;
+        });
+    });
+}
+
+ElmPackage.prototype.expandPackage = function(compiler,packageSpec,json) {
+    var self = this;
+    if (this.elmPackage == null) {
+        this.afterElmPackage = this.afterElmPackage.then(function() {
+            return self.expandPackage(compiler,packageSpec,json);
+        });
+        return this.afterElmPackage;
+    }
+    var packageName = pv.packageNameString(packageSpec);
+    var exposed = json["exposed-modules"];
+    var reachableSet = {};
+    return this._expandPackageFullyStep(compiler,reachableSet,packageSpec,exposed);
+}
+
 /* 
  * A solver for package versions using semver.
  * It contains a map of package names to version lists, and another
@@ -101,6 +172,7 @@ ElmPackage.prototype.findSourceFiles = function(modname) {
 function PackageSolver(retriever) {
     this.retriever = retriever;
     this.solver = new ls.Solver();
+    this.buildSolution = null;
     this.versions = {};
 }
 
