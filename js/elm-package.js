@@ -208,33 +208,5 @@ PackageSolver.prototype.solve = function(pspec) {
     return solution.getTrueVars();
 }
 
-function ElmProgram(packageRepoRequest,rootPackage,sourceModules) {
-    this.rootPackage = rootPackage;
-    this.inputSources = { };
-    this.packages = { };
-    var self = this;
-    this.afterLoad = q.all(sourceModules.map(function(sm) {
-        self.rootPackage.findSourceFiles(sm).then(function(sources) {
-            var next = self.inputSources;
-            for (var i = 0; i < sources.length; i++) {
-                var modname = sm[i];
-                var sourceres = sources[i];
-                next[modname.join(".")] = sourceres;
-            }
-            return next;
-        })
-    })).then(function(sources) {
-        for (var i = 0; i < self.rootPackage.elmPackage.length; i++) {
-            var rp = self.rootPackage.elmPackage[i];
-            
-        }
-    })
-}
-
-ElmProgram.loadPackage = function(pkgname) {
-    
-}
-
 module.exports.ElmPackage = ElmPackage;
-module.exports.ElmProgram = ElmProgram;
 module.exports.PackageSolver = PackageSolver;
