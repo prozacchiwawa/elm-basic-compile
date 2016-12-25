@@ -87,7 +87,7 @@ ElmPackage.prototype.findSourceFiles = function(modname) {
     }
 }
 
-ElmPackage.prototype._expandPackageFullyStep = function(compiler,reachableSet,packageSpec,exposed) {
+ElmPackage.prototype._expandPackageFullyStep = function(compiler,reachableSet,exposed) {
     var self = this;
     return q.all(exposed.map(function(mod) {
         var modname = mod.split('.');
@@ -119,7 +119,7 @@ ElmPackage.prototype._expandPackageFullyStep = function(compiler,reachableSet,pa
                     }).filter(function(imp) {
                         return !reachableSet[imp];
                     });
-                    return self._expandPackageFullyStep(compiler,reachableSet,packageSpec,s.imports);
+                    return self._expandPackageFullyStep(compiler,reachableSet,s.imports);
                 }
             } else if (s.elm) {
                 return compiler.parse(s.name, s.elm).then(function(res) {
@@ -128,7 +128,7 @@ ElmPackage.prototype._expandPackageFullyStep = function(compiler,reachableSet,pa
                     }).filter(function(imp) {
                         return !reachableSet[imp];
                     });
-                    return self._expandPackageFullyStep(compiler,reachableSet,packageSpec,s.imports);
+                    return self._expandPackageFullyStep(compiler,reachableSet,s.imports);
                 });
             } else {
                 s.imports = [];
@@ -142,18 +142,18 @@ ElmPackage.prototype._expandPackageFullyStep = function(compiler,reachableSet,pa
     });
 }
 
-ElmPackage.prototype.expandPackage = function(compiler,packageSpec,json) {
+ElmPackage.prototype.expandPackage = function(compiler) {
     var self = this;
     if (this.elmPackage == null) {
         this.afterElmPackage = this.afterElmPackage.then(function() {
-            return self.expandPackage(compiler,packageSpec,json);
+            return self.expandPackage(compiler);
         });
         return this.afterElmPackage;
     }
-    var packageName = pv.packageNameString(packageSpec);
-    var exposed = json["exposed-modules"];
+    var packageName = pv.packageNameString(this.projectSpec);
+    var exposed = this.elmPackage["exposed-modules"];
     var reachableSet = {};
-    return this._expandPackageFullyStep(compiler,reachableSet,packageSpec,exposed);
+    return this._expandPackageFullyStep(compiler,reachableSet,exposed);
 }
 
 /* 
