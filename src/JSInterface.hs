@@ -429,14 +429,12 @@ compileInterface :: Chan (EC.Context, String, [(CanonicalNameAndVersion, ECM.Int
 compileInterface requestChan replyChan arg = do
   array <- JS.fromJSArray arg
   packageName <- nameFromJS (array !! 0)
-  putStrLn $ "packageName " ++ (show packageName)
   isExposed <- boolFromJS (array !! 1)
   source <- pure $ JS.fromJSString (array !! 2)
   ifacesJS <- JS.fromJSArray (array !! 3)
   callback <- pure $ array !! 4
   ifaces <- mapM convertModule ifacesJS
   deps <- pure $ map (\(CanonicalNameAndVersion cname ver, _) -> cname) ifaces
-  putStrLn $ "source"
   writeChan requestChan (EC.Context packageName isExposed deps, source, ifaces)
   putStrLn $ "waiting"
   result <- readChan replyChan

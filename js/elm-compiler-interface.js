@@ -302,7 +302,7 @@ module.exports.init = function() {
                     },
                     compile: function(name,exposed,source,ifaces) {
                         var d = q.defer();
-                        compile([name,exposed ? "true" : "false",source,[],d.resolve]);
+                        compile([name,exposed ? "true" : "false",source,ifaces,d.resolve]);
                         return d.promise;
                     },
               		fullbuild: function(source) {

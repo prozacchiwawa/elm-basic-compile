@@ -4,6 +4,10 @@ var semver = require("semver");
 var ls = require("logic-solver");
 var btoa = btoa || require('btoa');
 var pv = require("./package-version");
+if (typeof localStorage === "undefined" || localStorage === null) {
+  var LocalStorage = require('node-localstorage').LocalStorage;
+  localStorage = new LocalStorage('./elm-cache');
+}
 
 /* 
  * user,project: github.com/<user>/<project>
@@ -122,11 +126,9 @@ ElmPackage.prototype._expandPackageFullyStep = function(compiler,reachableSet,ex
                     return self._expandPackageFullyStep(compiler,reachableSet,s.imports);
                 }
             } else if (s.elm) {
-                return compiler.parse(s.name, s.elm).then(function(res) {
+                return compiler.parse([self.projectSpec.user,self.projectSpec.project], s.elm).then(function(res) {
                     s.imports = res[1].map(function(mod) {
                         return mod.join(".");
-                    }).filter(function(imp) {
-                        return !reachableSet[imp];
                     });
                     return self._expandPackageFullyStep(compiler,reachableSet,s.imports);
                 });
@@ -164,13 +166,97 @@ ElmPackage.prototype.compileModule = function(compiler,mod) {
         });
         return this.afterElmPackage;
     }
-    var name = [self.projectSpec.user, self.projectSpec.project];
+    console.log("compileModule",mod);
     var modname = mod.join(".");
+    if (self.internalDeps[modname].intf) {
+        return q.fcall(function() { return [self.internalDeps[modname].intf,self.internalDeps[modname].elmo]; });
+    }
+    var lsIntf = localStorage.getItem(modname + ":interface");
+    var lsElmo = localStorage.getItem(modname + ":elmo");
+    if (lsIntf) {
+        return q.fcall(function() { return [true, lsIntf, lsElmo]; });
+    }
+    var name = [self.projectSpec.user, self.projectSpec.project];
     var exposed = self.elmPackage["exposed-modules"];
     var isExposed = exposed.indexOf(modname) != -1;
     var source = self.internalDeps[modname].elm;
-    var ifaces = [];
-    return compiler.compile(name,isExposed,source,ifaces);
+    var ifacesObj = {};
+    function addInterfacesFrom(modname) {
+        self.internalDeps[modname].imports.filter(function(m) {
+            return m.split(".")[0] != "Native";
+        }).map(function(m) {
+            ifacesObj[m] =
+                localStorage.getItem(m + ":interface") ||
+                self.internalDeps[m].intf;
+            addInterfacesFrom(m);
+        });
+    }
+    addInterfacesFrom(modname);
+    console.log(ifacesObj);
+    var ifaces = Object.keys(ifacesObj).map(function(m) {
+        return [
+            [[[name[0],name[1]],m.split(".")],self.projectSpec.version],
+            ifacesObj[m]
+        ];
+    });
+    return compiler.compile(name,isExposed,source,ifaces).then(function(res) {
+        if (res[0] != "false") {
+            localStorage.setItem(modname + ":interface", res[1]);
+            localStorage.setItem(modname + ":elmo", res[2]);
+        } else {
+            throw new Error(res[1].join("\n"));
+        }
+        return res;
+    });
+}
+
+ElmPackage.prototype._compileOneMore = function(compiler,order) {
+    console.log("_compileOneMore",order);
+    var self = this;
+    for (var k in order) {
+        var imports = order[k];
+        if (Object.keys(imports).filter(function(x) {
+            return !!order[x];
+        }).length == 0) {
+            // Build a single module with 0 remaining imports.
+            return self.compileModule(compiler,k.split(".")).then(function(res) {
+                delete order[k];
+                return self._compileOneMore(compiler,order);
+            });
+        }
+    }
+}
+
+/*
+ * Fully compile and cache a package.
+ */
+ElmPackage.prototype.compile = function(compiler) {
+    var self = this;
+    if (this.elmPackage == null) {
+        this.afterElmPackage = this.afterElmPackage.then(function() {
+            return self.compile(compiler);
+        });
+        return this.afterElmPackage;
+    }
+    
+    var compileOrderKeys = Object.keys(self.internalDeps);
+    var compileOrder = {};
+    for (var i = 0; i < compileOrderKeys.length; i++) {
+        var k = compileOrderKeys[i];
+        if (k.split(".")[0] == "Native") {
+            continue;
+        }
+        compileOrder[k] = {};
+        var imports = self.internalDeps[k].imports || [];
+        for (var j = 0; j < imports.length; j++) {
+            var imp = imports[j];
+            if (imp.split(".")[0] != "Native") {
+                compileOrder[k][imp] = true;
+            }
+        }
+    }
+
+    return self._compileOneMore(compiler,compileOrder);
 }
 
 /* 

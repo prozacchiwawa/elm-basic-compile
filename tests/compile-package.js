@@ -16,7 +16,7 @@ eci.init().then(function(compiler) {
     var compiler = r[0];
     var reachable = r[1];
     console.log("reachable",Object.keys(reachable));
-    return epkg.compileModule(compiler,["Basics"]);
+    return epkg.compile(compiler);
 }).then(function(res) {
     console.log("compile",res);
 }).fail(function(e) {
