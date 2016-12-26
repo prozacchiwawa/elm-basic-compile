@@ -11,9 +11,7 @@ module JSTypes where
 import qualified Data.Binary as Binary
 import qualified Data.ByteString.Lazy.Char8 as C8S
 import qualified Data.ByteString.Base64.Lazy as LB64
-import qualified Data.Map as Map
 
-import Types
 import qualified Elm.Compiler.Module as ECM
 import Elm.Package
 
@@ -24,6 +22,9 @@ import GHCJS.Foreign
 import GHCJS.Foreign.Callback
 import GHCJS.Prim as JS
 import qualified Unsafe.Coerce as UCK
+
+data CanonicalNameAndVersion = CanonicalNameAndVersion ECM.Canonical String
+    deriving (Ord, Eq, Show)
 
 {- Wrap a 1-argument callback in asyncCallback1 and cast it to a consumable
 type for interop.  The short answer is that I'm likely missing an imported type
@@ -44,10 +45,10 @@ Symmetric with canonicalNameFromJS
 canonicalNameToJS ::
   ECM.Canonical ->
   IO (JSVal)
-canonicalNameToJS (ECM.Canonical (Name user project) modPath) =
+canonicalNameToJS (ECM.Canonical name modPath) =
   do
     modPathArray <- rawNameToJS modPath
-    pnameArray <- JS.toJSArray [JS.toJSString user, JS.toJSString project]
+    pnameArray <- JS.toJSArray [JS.toJSString (user name), JS.toJSString (project name)]
     obj <- JS.toJSArray [pnameArray, modPathArray]
     return obj
 
@@ -121,35 +122,6 @@ nameFromJS :: JSVal -> IO Name
 nameFromJS nameArrayJS = do
   nameArray <- JS.fromJSArray nameArrayJS
   return (Name (JS.fromJSString (nameArray !! 0)) (JS.fromJSString (nameArray !! 1)))
-nameAndVersionFromJS :: JSVal -> IO NameAndVersion
-nameAndVersionFromJS jsArray = do
-  array <- JS.fromJSArray jsArray
-  name <- nameFromJS (array !! 0)
-  return (NameAndVersion name (JS.fromJSString (array !! 1)))
-
-createProjectGraph :: JSVal -> ProjectGraph Location
-createProjectGraph jsArray =
-  ProjectGraph
-    { projectData = Map.fromList []
-    , projectNatives = Map.fromList []
-    }
-
-depMapRowFromJS :: JSVal -> IO NameAndVersionWithGraph
-depMapRowFromJS jsArray = do
-  array <- JS.fromJSArray jsArray
-  canonicalNameAndVersion <- nameAndVersionFromJS (array !! 0)
-  graphDat <- pure $ createProjectGraph (array !! 1)
-  return $ NameAndVersionWithGraph canonicalNameAndVersion graphDat
-
-moduleVersionsFromJS :: JSVal -> IO ([(ECM.Raw, CanonicalNameAndVersion)], [NameAndVersionWithGraph])
-moduleVersionsFromJS modVersionsJS = do
-  depsArray <- JS.fromJSArray modVersionsJS
-  canonicalNames <- JS.fromJSArray (depsArray !! 0)
-  versionsCanonical <- mapM canonicalNameAndVersionFromJS canonicalNames
-  versions <- pure $ map (\vc -> (rawNameFromCanonicalNameAndVersion vc, vc)) versionsCanonical
-  depMapRows <- JS.fromJSArray (depsArray !! 1)
-  depMap <- mapM depMapRowFromJS depMapRows
-  return (versions, depMap)
 
 {- Consume one javascript object from the module provider and return a pair of
 Canonical name and Interface from Elm.

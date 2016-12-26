@@ -2,8 +2,6 @@
 
 module Main where
 
-import Types
-import Compiler as C
 import JSInterface as JSI
 
 import           Control.Concurrent
