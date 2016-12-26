@@ -109,6 +109,14 @@ base64StringToInterface b64 =
           Right (_, _, value) ->
             return value
 
+interfaceToBase64String ::
+  ECM.Interface ->
+  String
+interfaceToBase64String intf =
+  let bytestring = Binary.encode intf in
+  let bits = LB64.encode bytestring in
+  C8S.unpack bits
+
 nameFromJS :: JSVal -> IO Name
 nameFromJS nameArrayJS = do
   nameArray <- JS.fromJSArray nameArrayJS
@@ -153,5 +161,19 @@ convertModule value = do
   modBody <- pure $ JS.fromJSString (array !! 1)
   interface <- base64StringToInterface modBody
   return (name, interface)
+
+convertInterfaceToJS :: ECM.Interface -> IO JSVal
+convertInterfaceToJS intf = do
+  return $ JS.toJSString (interfaceToBase64String intf)
+
+boolToJS :: Bool -> IO JSVal
+boolToJS b = do
+  case b of
+    True -> return $ JS.toJSString "true"
+    False -> return $ JS.toJSString "false"
+
+boolFromJS :: JSVal -> IO Bool
+boolFromJS js = do
+  return $ JS.fromJSString js /= "false"
 
 #endif

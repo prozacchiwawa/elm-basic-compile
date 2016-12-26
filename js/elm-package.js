@@ -156,6 +156,23 @@ ElmPackage.prototype.expandPackage = function(compiler) {
     return this._expandPackageFullyStep(compiler,reachableSet,exposed);
 }
 
+ElmPackage.prototype.compileModule = function(compiler,mod) {
+    var self = this;
+    if (this.elmPackage == null) {
+        this.afterElmPackage = this.afterElmPackage.then(function() {
+            return self.compileModule(compiler,mod);
+        });
+        return this.afterElmPackage;
+    }
+    var name = [self.projectSpec.user, self.projectSpec.project];
+    var modname = mod.join(".");
+    var exposed = self.elmPackage["exposed-modules"];
+    var isExposed = exposed.indexOf(modname) != -1;
+    var source = self.internalDeps[modname].elm;
+    var ifaces = [];
+    return compiler.compile(name,isExposed,source,ifaces);
+}
+
 /* 
  * A solver for package versions using semver.
  * It contains a map of package names to version lists, and another

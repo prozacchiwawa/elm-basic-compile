@@ -293,13 +293,19 @@ module.exports.init = function() {
           	function(parseAndCompile) {
                 var parse = parseAndCompile[0];
                 var compile = parseAndCompile[1];
+                var fullcomp = parseAndCompile[2];
           	    d.resolve({
                     parse: function(name,source) {
                         var d = q.defer();
                         parse([name,source,d.resolve]);
                         return d.promise;
                     },
-              		compile: function(source) {
+                    compile: function(name,exposed,source,ifaces) {
+                        var d = q.defer();
+                        compile([name,exposed ? "true" : "false",source,[],d.resolve]);
+                        return d.promise;
+                    },
+              		fullbuild: function(source) {
               		    var d = q.defer();
                         var dd = d.promise.then(function(res) {
                             return [jsprelude.join('\n'),res,footer.join('\n')].join('\n');
