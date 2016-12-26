@@ -192,7 +192,6 @@ ElmPackage.prototype.compileModule = function(compiler,mod) {
         });
     }
     addInterfacesFrom(modname);
-    console.log(ifacesObj);
     var ifaces = Object.keys(ifacesObj).map(function(m) {
         return [
             [[[name[0],name[1]],m.split(".")],self.projectSpec.version],
