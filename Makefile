@@ -1,6 +1,6 @@
 all: \
 	.cabal-sandbox/bin/elm-basic-compile.jsexe/out.js \
-	js/elm-basic-compile.js
+	dist/elm-basic-compile.js
 
 elm-compiler:
 	git clone https://github.com/elm-lang/elm-compiler.git
@@ -19,7 +19,7 @@ elm-package:
 .cabal-sandbox/bin/elm-basic-compile.jsexe/out.js: .cabal-sandbox src/*.hs
 	cabal install -j elm-basic-compile
 
-js/elm-basic-compile.js: src/*.hs js/export.js
+dist/elm-basic-compile.js: src/*.hs js/export.js
 	cat \
 		js/prelude.js \
 		.cabal-sandbox/bin/elm-basic-compile.jsexe/rts.js \

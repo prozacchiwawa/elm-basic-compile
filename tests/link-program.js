@@ -18,12 +18,13 @@ retriever.useJson(packageSpec,{
 });
 var epkg = new ep.ElmPackage(retriever,packageSpec);
 return epkg.expandPackage(["Main"]).then(function(reachable) {
-}).then(function() {
     return epkg.compileModule("Main");
 }).then(function() {
     return epkg.link(["Main"]);
 }).then(function(js) {
     console.log(js);
+    process.exit(0);
 }).fail(function(e) {
     console.error("Error",e);
+    process.exit(1);
 });

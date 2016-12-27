@@ -1,7 +1,7 @@
 var q = require('q');
 var XMLHttpRequest = XMLHttpRequest || require('xmlhttprequest').XMLHttpRequest;
 var btoa = btoa || require('btoa');
-var elmBasicCompile = require('./elm-basic-compile');
+var elmBasicCompile = require('../dist/elm-basic-compile');
 var elmPackage = require('./elm-package');
 var githubSource = require('./github-source');
 

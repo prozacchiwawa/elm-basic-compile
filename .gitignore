@@ -5,3 +5,4 @@ dist
 node_modules
 elm-compiler
 elm-package
+elm-cache

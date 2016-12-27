@@ -1,5 +1,22 @@
 {
   "name": "elm-basic-compile",
+  "version": "0.0.18",
+  "description": "elm-compiler built with GHCJS and wrapped in a simple interface",
+  "main": "index.js",
+  "scripts": {
+      "test":"node tests/link-program.js",
+      "build":"make"
+  },
+  "keywords":[
+      "elm",
+      "elm-compiler",
+      "ghcjs"
+  ],
+  "author": "art yerkes <art.yerkes@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+      "url": "https://github.com/prozacchiwawa/elm-basic-compile/issues"
+  },
   "dependencies": {
     "btoa": "^1.1.2",
     "logic-solver": "^2.0.1",
