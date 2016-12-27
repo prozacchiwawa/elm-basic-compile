@@ -499,7 +499,7 @@ ElmPackage.prototype.link = function(mods) {
     }).then(function(result) {
         var fin = [elmStatic.prelude.join("\n")];
         fin.push.apply(fin,result);
-        fin.push(elmStatic.footer.join("\n"));
+        fin.push(elmStatic.footer(self.projectSpec).join("\n"));
         fin = fin.join("\n");
         return fin;
     });
