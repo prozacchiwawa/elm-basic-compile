@@ -2,6 +2,6 @@
 cabal.sandbox.config
 dist
 *~
-js/elm-basic-compile.js
-js/browsertest.js
 node_modules
+elm-compiler
+elm-package

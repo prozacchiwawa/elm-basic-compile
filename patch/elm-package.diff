@@ -1,0 +1,22 @@
+diff --git a/elm-package.cabal b/elm-package.cabal
+index 1e5125a..10f6135 100644
+--- a/elm-package.cabal
++++ b/elm-package.cabal
+@@ -56,7 +56,7 @@ Library
+         Utils.Http
+ 
+     Build-depends:
+-        aeson >= 0.11,
++        aeson,
+         aeson-pretty,
+         ansi-wl-pprint >= 0.6.7.3,
+         base >=4.2 && <5,
+@@ -120,7 +120,7 @@ Executable elm-package
+         Paths_elm_package
+ 
+     Build-depends:
+-        aeson >= 0.11,
++        aeson,
+         aeson-pretty,
+         ansi-wl-pprint >= 0.6 && < 0.7,
+         base >=4.2 && <5,
