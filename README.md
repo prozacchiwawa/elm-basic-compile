@@ -1,19 +1,17 @@
 elm-basic-compile
 =================
 
-You can build the web demo and the node demo with ```make```.  
+An npm module which incorporates the elm-compiler built with GHCJS and presenting a simplified compilation interface.  It is currently very rough, not well tested, and ripe for improvement.
 
-The makefile assumes that a cabal sandbox has been initialized in the following way:
+The simple way to use it is like this:
 
-    $ cabal sandbox init
-    $ cabal sandbox add-source ../elm-compiler # Checked out at 0.17 and patched for aeson-0.8
-    $ cabal sandbox add-source .
+    var ebc = require('elm-basic-compile');
+    ebc.justCompile("import Html\nmain=Html.text \"hi\"").then(function(res) {
+        if (res.error) {
+            // error
+        } else {
+            // eval(res); // Javascript should be runnable.
+        }
+    });
 
-A gist for the aeson version bump in 0.17 is here:
-
-https://gist.github.com/prozacchiwawa/148611da66eabb7c883995fa9cbd7125
-
-Also make sure to ```npm install``` before building.
-
-After make completes (browserify takes several minutes for me),
-index.html can served and will compile elm code.
+See tests/link-program.js for a slightly richer interface.
