@@ -1,6 +1,7 @@
 .cabal-sandbox
 cabal.sandbox.config
 dist
+!dist/elm-basic-compile.js
 *~
 node_modules
 elm-compiler
