@@ -1,0 +1,22 @@
+diff --git a/elm-compiler.cabal b/elm-compiler.cabal
+index 9122ccd..aa9934f 100644
+--- a/elm-compiler.cabal
++++ b/elm-compiler.cabal
+@@ -139,7 +139,7 @@ Library
+         Paths_elm_compiler
+ 
+     Build-depends:
+-        aeson >= 0.11,
++        aeson >= 0.9.0,
+         aeson-pretty < 0.8,
+         ansi-terminal >= 0.6.2.1 && < 0.7,
+         ansi-wl-pprint >= 0.6.7 && < 0.7,
+@@ -177,7 +177,7 @@ Executable elm
+ 
+     Build-depends:
+         base >=4.2 && <5,
+-        aeson >= 0.11,
++        aeson >= 0.9.0,
+         binary >= 0.7.0.0 && < 0.8,
+         directory >= 1.0 && < 2.0,
+         filepath >= 1 && < 2.0,
