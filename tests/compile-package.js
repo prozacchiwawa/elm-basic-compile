@@ -9,7 +9,7 @@ var epkg = new ep.ElmPackage(new gs.GithubSource(),packageSpec);
 var packageName = pv.packageNameString(packageSpec);
 return epkg.expandPackage().then(function(reachable) {
     console.log("reachable",Object.keys(reachable));
-    return epkg.compile(compiler);
+    return epkg.compile();
 }).then(function(res) {
     console.log("compile",res);
 }).fail(function(e) {

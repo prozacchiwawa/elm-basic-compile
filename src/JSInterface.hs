@@ -120,13 +120,10 @@ compileInterface requestChan replyChan arg = do
   callback <- pure $ array !! 4
   ifaces <- mapM convertModule ifacesJS
   deps <- pure $ map (\(CanonicalNameAndVersion cname ver, _) -> cname) ifaces
-  writeChan requestChan (EC.Context packageName isExposed deps, source, ifaces)
-  putStrLn $ "waiting"
+  writeChan requestChan (EC.Context packageName False deps, source, ifaces)
   result <- readChan replyChan
-  putStrLn $ "result"
   res <- encodeCompilerResult source result
   
-  putStrLn $ "callback"
   runAction callback res
 
 compileInterfaceService :: Chan (EC.Context, String, [(CanonicalNameAndVersion, ECM.Interface)]) -> Chan (EC.Localizer, [EC.Warning], Either [EC.Error] EC.Result) -> IO ()
