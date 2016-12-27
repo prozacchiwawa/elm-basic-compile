@@ -327,6 +327,14 @@ ElmPackage.prototype.isExternalModule = function(k) {
             return ep;
         }
     }
+    if (self.internalDeps && !self.internalDeps[k]) {
+        for (var ep in self.packageDeps) {
+            var who = self.packageDeps[ep];
+            if (who.internalDeps && who.internalDeps[k]) {
+                return ep;
+            }
+        }
+    }
     return null;
 }
 
@@ -372,29 +380,32 @@ ElmPackage.prototype.compile = function() {
 
 ElmPackage.prototype._collect = function(compileOrder,m) {
     var self = this;
+    if (compileOrder[m]) {
+        return;
+    }
+    var extmod = self.isExternalModule(m);
+    if (extmod) {
+        return self.packageDeps[extmod]._collect(compileOrder,m);
+    }
+    compileOrder[m] = compileOrder[m] || {};
     var ideps = self.internalDeps[m];
     var imports = ideps.imports || [];
     for (var i = 0; i < imports.length; i++) {
         var k = imports[i];
-        compileOrder[k] = compileOrder[k] || {};
-        var extmod = self.isExternalModule(k);
-        if (extmod) {
-            return self.packageDeps[extmod]._collect(compileOrder,k);
-        }
-        var imports = self.internalDeps[k].imports || [];
-        for (var j = 0; j < imports.length; j++) {
-            var imp = imports[j];
-            compileOrder[k][imp] = true;
-        }
+        compileOrder[m][k] = true;
+        self._collect(compileOrder,k);
     }
 }
 
 ElmPackage.prototype._linkOne = function(compileOrder,result) {
     var self = this;
     for (var k in compileOrder) {
-        var o = Object.keys(compileOrder[k]).map(function(m) {
+        var o = Object.keys(compileOrder[k]).filter(function(m) {
             return !!compileOrder[m];
         });
+
+        console.log("/* remaining to link for",k,":",o,"*/");
+
         if (o.length != 0) {
             continue;
         }
@@ -418,7 +429,7 @@ ElmPackage.prototype._linkOne = function(compileOrder,result) {
             }
             js = who.internalDeps[m].elmo;
         }
-        result.push(js);
+        result.push("//***"+m,js);
         delete compileOrder[m];
         return self._linkOne(compileOrder,result);
     }
@@ -441,11 +452,11 @@ ElmPackage.prototype.link = function(mods) {
     var compileOrder = {};
     for (var i = 0; i < compileOrderKeys.length; i++) {
         var k = compileOrderKeys[i];
-        compileOrder[k] = {};
         self._collect(compileOrder, k);
     }
 
     var result = [];
+    console.log("/*Link:",compileOrder,"*/");
     return self._linkOne(compileOrder, result).then(function(result) {
         var fin = [elmStatic.prelude.join("\n")];
         fin.push.apply(fin,result);
