@@ -19,10 +19,8 @@ retriever.useJson(packageSpec,{
 var epkg = new ep.ElmPackage(retriever,packageSpec);
 return epkg.expandPackage(["Main"]).then(function(reachable) {
 }).then(function() {
-    console.log("before compile");
     return epkg.compileModule("Main");
 }).then(function() {
-    console.log("before link");
     return epkg.link(["Main"]);
 }).then(function(js) {
     console.log(js);

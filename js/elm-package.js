@@ -191,8 +191,7 @@ ElmPackage.prototype._compileIfNeeded = function(mods,i) {
 
     console.log("/* _compileIfNeeded",who.projectSpec,m,"*/");
 
-    who.solver.deps[m] = who.solver.deps[m] || {name: m, elm: null, js: null, imports: null};
-    who.solver.deps[m].pkg = who;
+    who.solver.deps[m] = who.solver.deps[m] || {name: m, elm: null, js: null, imports: null, pkg: who};
     var s = who.solver.deps[m];
 
     console.log("/* _compileIfNeeded */");
@@ -256,16 +255,15 @@ ElmPackage.prototype._compileIfNeeded = function(mods,i) {
         });
         for (var j = 0; j < ifaces.length; j++) {
             var k = ifaces[j];
-            var s = self.solver.deps[k];
-            var who = self._findPackageForModule(k);
-            var spkg = [who.projectSpec.user,who.projectSpec.project];
+            var ss = self.solver.deps[k];
+            var whoj = ss.pkg;
+            var spkg = [whoj.projectSpec.user,whoj.projectSpec.project];
             console.log("/* Import",k,"in",spkg,"*/");
             compileInputs.push([
-                [[spkg,k.split(".")],who.projectSpec.version],
-                s.intf
+                [[spkg,k.split(".")],whoj.projectSpec.version],
+                ss.intf
             ]);
         }
-        var s = self.solver.deps[m];
         var name = [who.projectSpec.user, who.projectSpec.project];
         var exposed = who.elmPackage["exposed-modules"];
         var isExposed = exposed.indexOf(m) != -1 ? "true" : "false";
@@ -352,7 +350,7 @@ ElmPackage.prototype._linkOne = function(compileOrder,result) {
             }
             js = who.solver.deps[m].elmo;
         }
-        result.push("//***"+modname);
+        result.push("//***"+modname+" "+JSON.stringify(who.projectSpec));
         result.push(js);
         delete compileOrder[m];
         return self._linkOne(compileOrder,result);
