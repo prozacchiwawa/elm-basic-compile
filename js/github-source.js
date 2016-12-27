@@ -42,11 +42,18 @@ function promiseOneObject(url,api,headers) {
 }
 
 function GithubSource() {
+    this.storedSource = {};
 }
+
 /* Return a promise for elm-package.json given a projectSpec */
 GithubSource.prototype.retrieveJson = function(projectSpec) {
+    var storeKey = this._storedJsonKey(projectSpec);
+    var item = this.storedSource[storeKey];
+    if (item) {
+        return q.fcall(function() { return item; });
+    }
     var url = "https://raw.githubusercontent.com/" + projectSpec.user + "/" + projectSpec.project + "/" + projectSpec.version + "/elm-package.json";
-    var item = localStorage.getItem(url);
+    item = localStorage.getItem(url);
     if (item) {
         return q.fcall(function() { return item; });
     }
@@ -55,6 +62,15 @@ GithubSource.prototype.retrieveJson = function(projectSpec) {
         return json;
     });
 }
+
+GithubSource.prototype._sourceFileStoreKey = function(projectSpec,modname) {
+    return projectSpec.user + "/" + projectSpec.project + ":" + projectSpec.version + "/" + modname.join("/");
+}
+
+GithubSource.prototype._storedJsonKey = function(projectSpec) {
+    return projectSpec.user+"/"+projectSpec.project+":json:"+projectSpec.version;
+}
+
 /*
  * Return a promise for a source file from a published elm project given
  * a package spec, a possible source directory and a module name (list of
@@ -62,7 +78,12 @@ GithubSource.prototype.retrieveJson = function(projectSpec) {
  */
 GithubSource.prototype.retrieveSource = function(projectSpec,srcDir,modname,ext) {
     var url = "https://raw.githubusercontent.com/" + projectSpec.user + "/" + projectSpec.project + "/" + projectSpec.version + "/" + srcDir + "/" + modname.join("/") + "." + ext;
-    var item = localStorage.getItem(url);
+    var storeKey = this._sourceFileStoreKey(projectSpec,modname);
+    var item = this.storedSource[storeKey];
+    if (ext == "elm" && item) {
+        return q.fcall(function() { return item; });
+    }
+    item = localStorage.getItem(url);
     if (item) {
         return q.fcall(function() { return item; });
     }
@@ -71,6 +92,7 @@ GithubSource.prototype.retrieveSource = function(projectSpec,srcDir,modname,ext)
         return source;
     });
 }
+
 /*
  * Return a list of packageSpec given a project name.
  * projectName like {user: "prozacchiwawa", project: "effmodel"}
@@ -95,6 +117,19 @@ GithubSource.prototype.retrieveTags = function(projectName) {
         localStorage.setItem(url, JSON.stringify(tags));
         return tags;
     });
+}
+
+GithubSource.prototype.useSourceFile = function(projectSpec,mod,content) {
+    var storeKey = this._sourceFileStoreKey(projectSpec,mod);
+    this.storedSource[storeKey] = content;
+}
+
+GithubSource.prototype.useJson = function(projectSpec,json) {
+    if (typeof(json) !== "string") {
+        json = JSON.stringify(json);
+    }
+    var storeKey = this._storedJsonKey(projectSpec);
+    this.storedSource[storeKey] = json;
 }
 
 module.exports.GithubSource = GithubSource;

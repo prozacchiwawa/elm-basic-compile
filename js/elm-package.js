@@ -4,6 +4,8 @@ var semver = require("semver");
 var ls = require("logic-solver");
 var btoa = btoa || require('btoa');
 var pv = require("./package-version");
+var elmStatic = require("./elm-static");
+var compiler = require("./elm-compiler-interface");
 if (typeof localStorage === "undefined" || localStorage === null) {
   var LocalStorage = require('node-localstorage').LocalStorage;
   localStorage = new LocalStorage('./elm-cache');
@@ -51,7 +53,12 @@ function ElmPackage(retriever,projectSpec,solver) {
     this.solver.have = this.solver.have || {};
     var pname = pv.packageNameString(projectSpec);
     this.solver.have[pname] = this;
-    this.afterElmPackage = retriever.retrieveJson(projectSpec).then(function(pspec) {
+    this.compiler = null;
+    this.afterElmPackage = compiler.init().then(function(comp) {
+        self.compiler = comp;
+    }).then(function() {
+        return retriever.retrieveJson(projectSpec);
+    }).then(function(pspec) {
         return JSON.parse(pspec);
     }).then(function(pspec) {
         self.solver.injectPackage(projectSpec,pspec);
@@ -122,7 +129,7 @@ ElmPackage.prototype.findSourceFiles = function(modname) {
     }
 }
 
-ElmPackage.prototype._expandPackageFullyStep = function(compiler,reachableSet,exposed) {
+ElmPackage.prototype._expandPackageFullyStep = function(reachableSet,exposed) {
     var self = this;
     return q.all(exposed.filter(function(mod) {
         return !self.isExternalModule(mod);
@@ -156,14 +163,14 @@ ElmPackage.prototype._expandPackageFullyStep = function(compiler,reachableSet,ex
                     }).filter(function(imp) {
                         return !reachableSet[imp];
                     });
-                    return self._expandPackageFullyStep(compiler,reachableSet,s.imports);
+                    return self._expandPackageFullyStep(reachableSet,s.imports);
                 }
             } else if (s.elm) {
-                return compiler.parse([self.projectSpec.user,self.projectSpec.project], s.elm).then(function(res) {
+                return self.compiler.parse([self.projectSpec.user,self.projectSpec.project], s.elm).then(function(res) {
                     s.imports = res[1].map(function(mod) {
                         return mod.join(".");
                     });
-                    return self._expandPackageFullyStep(compiler,reachableSet,s.imports);
+                    return self._expandPackageFullyStep(reachableSet,s.imports);
                 });
             } else {
                 s.imports = [];
@@ -177,17 +184,19 @@ ElmPackage.prototype._expandPackageFullyStep = function(compiler,reachableSet,ex
     });
 }
 
-ElmPackage.prototype.expandPackage = function(compiler) {
+ElmPackage.prototype.expandPackage = function(extra) {
     var self = this;
-    console.log("expandPackage",self.projectSpec);
     if (this.elmPackage == null) {
         this.afterElmPackage = this.afterElmPackage.then(function() {
-            return self.expandPackage(compiler);
+            return self.expandPackage(extra);
         });
         return this.afterElmPackage;
     }
     var packageName = pv.packageNameString(this.projectSpec);
-    var exposed = this.elmPackage["exposed-modules"];
+    var exposed = this.elmPackage["exposed-modules"].map(function(m) { return m; });
+    if (extra) {
+        exposed.push.apply(exposed,extra);
+    }
     var reachableSet = {};
     // Put in exposed modules from imports
     self.solver.have = self.solver.have || {};
@@ -198,20 +207,19 @@ ElmPackage.prototype.expandPackage = function(compiler) {
         var exposed = self.solver.versions[k][ver]["exposed-modules"];
         var specAr = k.split("/");
         var modspec = {user: specAr[0], project: specAr[1], version: ver};
-        console.log("load package",k,"for",self.projectSpec);
         if (self.solver.have[k]) {
             self.packageDeps[k] = self.solver.have[k];
         } else {
             var pkg = new ElmPackage(self.retriever,modspec,self.solver);
             self.packageDeps[k] = pkg;
-            return pkg.expandPackage(compiler).then(function(r) {
-                return pkg.compile(compiler).then(function() {
+            return pkg.expandPackage().then(function(r) {
+                return pkg.compile().then(function() {
                     return r;
                 });
             });
         }
     })).then(function() {
-        return self._expandPackageFullyStep(compiler,reachableSet,exposed);
+        return self._expandPackageFullyStep(reachableSet,exposed);
     });
 }
 
@@ -231,24 +239,25 @@ ElmPackage.prototype.addInterfacesFrom = function(modname,ifacesObj) {
     });
 }
 
-ElmPackage.prototype.compileModule = function(compiler,mod) {
+ElmPackage.prototype.compileModule = function(modname) {
     var self = this;
+    var mod = modname.split("/");
     if (this.elmPackage == null) {
         this.afterElmPackage = this.afterElmPackage.then(function() {
-            return self.compileModule(compiler,mod);
+            return self.compileModule(modname);
         });
         return this.afterElmPackage;
     }
-    var modname = mod.join(".");
+
     if (self.isExternalModule(modname)) {
         if (self.packageDeps[modname]) {
             // We already built it
-            return self.packageDeps[modname].compileModule(compiler,mod);
+            return self.packageDeps[modname].compileModule(modname);
         }
         throw new Error("Could not find package dep " + modname);
     }
-    console.log("compileModule",this.projectSpec,":",mod);
-    if (self.internalDeps[modname].intf) {
+
+    if (self.internalDeps[modname] && self.internalDeps[modname].intf) {
         return q.fcall(function() {
             return [
                 self.internalDeps[modname].intf,
@@ -256,9 +265,12 @@ ElmPackage.prototype.compileModule = function(compiler,mod) {
             ];
         });
     }
+
     var lsIntf = localStorage.getItem(modname + ":interface");
     var lsElmo = localStorage.getItem(modname + ":elmo");
     if (lsIntf) {
+        self.internalDeps[modname].intf = lsIntf;
+        self.internalDeps[modname].elmo = lsElmo;
         return q.fcall(function() { return [true, lsIntf, lsElmo]; });
     }
     var name = [self.projectSpec.user, self.projectSpec.project];
@@ -268,12 +280,18 @@ ElmPackage.prototype.compileModule = function(compiler,mod) {
     var ifacesObj = {};
     self.addInterfacesFrom(modname,ifacesObj);
     var ifaces = Object.keys(ifacesObj).map(function(m) {
+        var pkg = self.isExternalModule(m);
+        if (pkg) {
+            pkg = pkg.split("/");
+        } else {
+            pkg = name;
+        }
         return [
-            [[[name[0],name[1]],m.split(".")],self.projectSpec.version],
+            [[[pkg[0],pkg[1]],m.split(".")],self.projectSpec.version],
             ifacesObj[m]
         ];
     });
-    return compiler.compile(name,isExposed,source,ifaces).then(function(res) {
+    return self.compiler.compile(name,isExposed,source,ifaces).then(function(res) {
         if (res[0] != "false") {
             localStorage.setItem(modname + ":interface", res[1]);
             localStorage.setItem(modname + ":elmo", res[2]);
@@ -284,7 +302,7 @@ ElmPackage.prototype.compileModule = function(compiler,mod) {
     });
 }
 
-ElmPackage.prototype._compileOneMore = function(compiler,order) {
+ElmPackage.prototype._compileOneMore = function(order) {
     var self = this;
     for (var k in order) {
         var imports = order[k];
@@ -292,9 +310,9 @@ ElmPackage.prototype._compileOneMore = function(compiler,order) {
             return !!order[x];
         }).length == 0) {
             // Build a single module with 0 remaining imports.
-            return self.compileModule(compiler,k.split(".")).then(function(res) {
+            return self.compileModule(k).then(function(res) {
                 delete order[k];
-                return self._compileOneMore(compiler,order);
+                return self._compileOneMore(order);
             });
         }
     }
@@ -315,11 +333,11 @@ ElmPackage.prototype.isExternalModule = function(k) {
 /*
  * Fully compile and cache a package.
  */
-ElmPackage.prototype.compile = function(compiler) {
+ElmPackage.prototype.compile = function() {
     var self = this;
     if (this.elmPackage == null) {
         this.afterElmPackage = this.afterElmPackage.then(function() {
-            return self.compile(compiler);
+            return self.compile();
         });
         return this.afterElmPackage;
     }
@@ -349,7 +367,91 @@ ElmPackage.prototype.compile = function(compiler) {
         }
     }
 
-    return self._compileOneMore(compiler,compileOrder);
+    return self._compileOneMore(compileOrder);
+}
+
+ElmPackage.prototype._collect = function(compileOrder,m) {
+    var self = this;
+    var ideps = self.internalDeps[m];
+    var imports = ideps.imports || [];
+    for (var i = 0; i < imports.length; i++) {
+        var k = imports[i];
+        compileOrder[k] = compileOrder[k] || {};
+        var extmod = self.isExternalModule(k);
+        if (extmod) {
+            return self.packageDeps[extmod]._collect(compileOrder,k);
+        }
+        var imports = self.internalDeps[k].imports || [];
+        for (var j = 0; j < imports.length; j++) {
+            var imp = imports[j];
+            compileOrder[k][imp] = true;
+        }
+    }
+}
+
+ElmPackage.prototype._linkOne = function(compileOrder,result) {
+    var self = this;
+    for (var k in compileOrder) {
+        var o = Object.keys(compileOrder[k]).map(function(m) {
+            return !!compileOrder[m];
+        });
+        if (o.length != 0) {
+            continue;
+        }
+
+        var m = k;
+        var modname = m.split(".");
+        var js = null;
+        var who = self;
+        var pname = self.isExternalModule(m);
+        if (pname) {
+            who = self.packageDeps[pname];
+        }
+        if (modname[0] == "Native") {
+            if (!who.internalDeps[m].js) {
+                throw new Error("Could not find js source for"+who.projectSpec+":"+m);
+            }
+            js = who.internalDeps[m].js;
+        } else {
+            if (!who.internalDeps[m].elmo) {
+                throw new Error("Module "+JSON.stringify(who.projectSpec)+":"+m+" was not compiled");
+            }
+            js = who.internalDeps[m].elmo;
+        }
+        result.push(js);
+        delete compileOrder[m];
+        return self._linkOne(compileOrder,result);
+    }
+    return q.fcall(function() { return result; });
+}
+
+ElmPackage.prototype.link = function(mods) {
+    var self = this;
+    if (this.elmPackage == null) {
+        this.afterElmPackage = this.afterElmPackage.then(function() {
+            return self.link(mods);
+        });
+        return this.afterElmPackage;
+    }
+    
+    var compileOrderKeys = Object.keys(self.internalDeps);
+    if (mods) {
+        compileOrderKeys.push.apply(compileOrderKeys,mods);
+    }
+    var compileOrder = {};
+    for (var i = 0; i < compileOrderKeys.length; i++) {
+        var k = compileOrderKeys[i];
+        compileOrder[k] = {};
+        self._collect(compileOrder, k);
+    }
+
+    var result = [];
+    return self._linkOne(compileOrder, result).then(function(result) {
+        var fin = [elmStatic.prelude.join("\n")];
+        fin.push.apply(fin,result);
+        fin.push(elmStatic.footer.join("\n"));
+        return fin.join("\n");
+    });
 }
 
 /* 
@@ -490,8 +592,10 @@ PackageSolver.prototype.solve = function(pspec) {
  * The haskell code can tell us what elmi files will be required to compile
  * a specific module given a set of exact dependencies, which have been
  * created by PackageSolver::solve.  We must however build to elmi.
+ *
+ * Once elmo files are generated, we link by concatenating javascript from
+ * the data store.
  */
-
 
 module.exports.ElmPackage = ElmPackage;
 module.exports.PackageSolver = PackageSolver;

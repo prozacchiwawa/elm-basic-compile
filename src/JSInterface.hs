@@ -142,16 +142,8 @@ callable function by interop.  Interop uses this to obtain a compiler reference.
 It starts the async services used to chain the various data providers together
 to serve the goal of compiling elm code.
 -}
-initCompiler :: JSRef a -> JSRef a -> JSRef a -> IO ()
-initCompiler modVersionsJS load callback =
-  let (EP.Version major minor patch) = EC.version in
-  let name = EP.Name { EP.user = "elm-lang", EP.project = "test" } in
-  let versionString = List.intercalate "." (map show [major, minor, patch]) in
-  do
-    loadArray <- JS.fromJSArray load
-    loadJSObj <- pure $ loadArray !! 0
-    loadModules <- pure $ loadArray !! 1
-
+initCompiler :: JSRef a -> IO ()
+initCompiler callback = do
     parseRequestChan <- newChan
     parseReplyChan <- newChan
 
