@@ -1,6 +1,6 @@
 {
   "name": "elm-basic-compile",
-  "version": "0.0.18",
+  "version": "0.0.100",
   "description": "elm-compiler built with GHCJS and wrapped in a simple interface",
   "main": "index.js",
   "scripts": {
