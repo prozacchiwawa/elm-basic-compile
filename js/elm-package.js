@@ -305,7 +305,7 @@ ElmPackage.prototype._compileIfNeeded = function(mods,i) {
         for (var j = 0; j < ifaces.length; j++) {
             var k = ifaces[j];
             for (var p in who.solver.deps[k]) {
-                var ss = who.solve.deps[k][p];
+                var ss = who.solver.deps[k][p];
                 var whoj = ss.pkg;
                 var spkg = [whoj.projectSpec.user,whoj.projectSpec.project];
                 console.log("/* Import",k,"in",spkg,"*/");
