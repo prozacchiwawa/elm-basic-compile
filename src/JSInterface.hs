@@ -80,10 +80,10 @@ parseCode requestChan replyChan arg = do
   source <- pure $ JS.fromJSString sourceJS
   writeChan requestChan (name, source)
   (errors, myname, imports) <- readChan replyChan
-
+  errorListJS <- makeErrorListJS EC.dummyLocalizer errors source
   result <- case errors of
               [] -> makeParseReply myname imports
-              e -> makeErrorListJS EC.dummyLocalizer e source
+              e -> JS.toJSArray [errorListJS]
 
   runAction callback result
 

@@ -257,6 +257,9 @@ ElmPackage.prototype._compileIfNeeded = function(mods,i) {
         self.log("/* Parse",s.name,"*/");
         return who.compiler.parse([who.projectSpec.user,who.projectSpec.project], s.elm).then(function(res) {
             self.log("/* Got Imports",s.pkg.projectSpec,m,res,i,"*/");
+            if (res.length == 1) {
+                throw new Error(res[0].join("\n"));
+            }
             var pkgname = pv.packageNameString(who.projectSpec);
             var importsIn = res[1].map(function(mod) {
                 return mod.join(".");
