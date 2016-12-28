@@ -52,8 +52,15 @@ function ElmPackage(retriever,projectSpec,solver) {
     this.solver.have = this.solver.have || {};
     var pname = pv.packageNameString(projectSpec);
     this.solver.have[pname] = this;
-    this.solver.deps = {};
+    this.solver.deps = this.solver.deps || {};
     this.compiler = null;
+    this._dolog = false;
+    this.log = function() {
+        if (this._dolog) {
+            var args = [].slice.call(arguments);
+            console.log.apply(console, args);
+        }
+    };
     this.afterElmPackage = compiler.init().then(function(comp) {
         self.compiler = comp;
     }).then(function() {
@@ -71,6 +78,10 @@ function ElmPackage(retriever,projectSpec,solver) {
         self.elmPackage = pspec;
         return self.elmPackage;
     });
+}
+
+ElmPackage.prototype.debug = function(on) {
+    this._dolog = on;
 }
 
 /* 
@@ -151,7 +162,7 @@ ElmPackage.prototype.expandPackage = function(extra) {
         exposed.push.apply(exposed,extra);
     }
 
-    console.log("/* expandPackage",self.projectSpec,exposed,"*/");
+    self.log("/* expandPackage",self.projectSpec,exposed,"*/");
     // Put in exposed modules from imports
     self.solver.have = self.solver.have || {};
     var downstreamPackages = Object.keys(self.elmPackage.dependencies);
@@ -184,7 +195,7 @@ ElmPackage.prototype._findPackageForModule = function(m) {
 ElmPackage.prototype._compileIfNeeded = function(mods,i) {
     var self = this;
     if (i >= mods.length) {
-        console.log("/* Done compiling */");
+        self.log("/* Done compiling */");
         return q.fcall(function() { });
     }
     var m = mods[i];
@@ -199,22 +210,22 @@ ElmPackage.prototype._compileIfNeeded = function(mods,i) {
         m = split[0];
     }
 
-    console.log("/* _compileIfNeeded",who.projectSpec,m,"*/");
+    self.log("/* _compileIfNeeded",who.projectSpec,m,"*/");
 
     var pkgname = pv.packageNameString(who.projectSpec);
     var s = {name: m, elm: null, js: null, imports: null, pkg: who, exported: who.elmPackage["exposed-modules"].indexOf(pkgname) != -1};
     who.solver.deps[m] = who.solver.deps[m] || {};
     who.solver.deps[m][pkgname] = who.solver.deps[m][pkgname] || s;
-    console.log("/* deps",Object.keys(who.solver.deps[m]),"*/");
+    self.log("/* deps",Object.keys(who.solver.deps[m]),"*/");
     s = who._getModule(m);
 
-    console.log("/* _compileIfNeeded */");
+    self.log("/* _compileIfNeeded",s,"*/");
 
     if (!s.elm && !s.js) {
-        console.log("/* Get source for",m,"*/");
+        self.log("/* Get source for",m,"*/");
         return who.findSourceFiles(m.split(".")).then(function(sres) {
             var res = sres[0];
-            console.log("/* Got source for",m,res[0],"*/");
+            self.log("/* Got source for",m,res[0],"*/");
             s[res[0]] = res[1];
             if (s.js) {
                 var jsImport = s.js.match(self.importsRe);
@@ -227,23 +238,25 @@ ElmPackage.prototype._compileIfNeeded = function(mods,i) {
                     });
                 }
             } else if (s.elm) {
-                var intf = localStorage.getItem(m + ":interface");
-                var elmo = localStorage.getItem(m + ":elmo");
-                s.intf = intf;
-                s.elmo = elmo;
+                if (!self.solver.deps[m].uncached) {
+                    var intf = localStorage.getItem(m + ":interface");
+                    var elmo = localStorage.getItem(m + ":elmo");
+                    s.intf = intf;
+                    s.elmo = elmo;
+                }
             }
-            console.log("/* Src */");
+            self.log("/* Src */");
         }).fail(function(e) {
             console.error(e);
             throw e;
         }).then(function() {
-            console.log("/* New compile cycle */");
+            self.log("/* New compile cycle */");
             return self._compileIfNeeded(mods,i);
         });
     } else if (!s.imports) {
-        console.log("/* Parse",s.name,"*/");
+        self.log("/* Parse",s.name,"*/");
         return who.compiler.parse([who.projectSpec.user,who.projectSpec.project], s.elm).then(function(res) {
-            console.log("/* Got Imports",s.pkg.projectSpec,m,res,i,"*/");
+            self.log("/* Got Imports",s.pkg.projectSpec,m,res,i,"*/");
             var pkgname = pv.packageNameString(who.projectSpec);
             var importsIn = res[1].map(function(mod) {
                 return mod.join(".");
@@ -252,7 +265,7 @@ ElmPackage.prototype._compileIfNeeded = function(mods,i) {
             for (var j = 0; j < importsIn.length; j++) {
                 var k = importsIn[j];
                 var keys = who.solver.deps[k] ? Object.keys(who.solver.deps[k]) : [];
-                console.log("/* import?",k,keys,"*/");
+                self.log("/* import?",k,keys,"*/");
                 if (keys.length > 1) {
                     for (var l = 0; l < keys.length; l++) {
                         imports.push(k+':'+pkgname);
@@ -265,14 +278,14 @@ ElmPackage.prototype._compileIfNeeded = function(mods,i) {
             return who._compileIfNeeded(s.imports,0);
         }).then(function() { return self._compileIfNeeded(mods,i); });
     } else if (s.elm && !s.intf) {
-        console.log("/* Interface",m,"*/");
+        self.log("/* Interface",m,"*/");
         var who = self._findPackageForModule(m);
         var needModules = s.imports.filter(function(k) {
             return !who._getModule(k) && k.split('.')[0] !== 'Native';
         });
         if (needModules.length > 0) {
             var expandedModules = [];
-            console.log("/* Unretrieved mods",needModules,"*/");
+            self.log("/* Unretrieved mods",needModules,"*/");
             for (var j = 0; j < needModules.length; j++) {
                 var mod = needModules[j];
                 for (var k in self.solver.deps[mod]) {
@@ -280,7 +293,7 @@ ElmPackage.prototype._compileIfNeeded = function(mods,i) {
                 }
             }
             return who._compileIfNeeded(expandedModules,0).then(function() {
-                console.log("/* Continue compilation */");
+                self.log("/* Continue compilation */");
                 return self._compileIfNeeded(mods,i);
             });
         }
@@ -308,7 +321,7 @@ ElmPackage.prototype._compileIfNeeded = function(mods,i) {
                 var ss = who.solver.deps[k][p];
                 var whoj = ss.pkg;
                 var spkg = [whoj.projectSpec.user,whoj.projectSpec.project];
-                console.log("/* Import",k,"in",spkg,"*/");
+                self.log("/* Import",k,"in",spkg,"*/");
                 compileInputs.push([
                     [[spkg,k.split(".")],whoj.projectSpec.version],
                     ss.intf
@@ -328,14 +341,17 @@ ElmPackage.prototype._compileIfNeeded = function(mods,i) {
             return self._compileIfNeeded(mods,i);
         }
 */
-        console.log("/* Compile",m,isExposed,JSON.stringify(compileInputs.map(function(i) { return i[0]; })),"*/");
+        self.log("/* Compile",m,isExposed,JSON.stringify(compileInputs.map(function(i) { return i[0]; })),"*/");
         return self.compiler.compile(name,isExposed,source,compileInputs).fail(function(error) {
             console.error("compiling",name,error);
             throw error;
         }).then(function(res) {
             if (res[0] !== "false") {
-                localStorage.setItem(m + ":interface", res[1]);
-                localStorage.setItem(m + ":elmo", res[2]);
+                var ss = self._getModule(m);
+                if (!self.solver.deps[m].uncached) {
+                    localStorage.setItem(m + ":interface", res[1]);
+                    localStorage.setItem(m + ":elmo", res[2]);
+                }
                 self._getModule(m).intf = res[1];
                 self._getModule(m).elmo = res[2];
             } else {
@@ -344,22 +360,24 @@ ElmPackage.prototype._compileIfNeeded = function(mods,i) {
             return [res[0] !== "false", res[1], res[2]];
         }).then(function() { return self._compileIfNeeded(mods,i); });
     } else {
-        console.log("/* Mod advance",i,mods[i],mods,"*/");
+        self.log("/* Mod advance",i,mods[i],mods,"*/");
         return self._compileIfNeeded(mods,i+1);
     }
 }
 
-ElmPackage.prototype.compileModule = function(modname) {
-    var self = this;
-    var pkg = modname.split("/");
+ElmPackage.prototype.compileModule = function(modname,fresh) {
     if (this.elmPackage == null) {
         this.afterElmPackage = this.afterElmPackage.then(function() {
-            return self.compileModule(modname);
+            return this.compileModule(modname,fresh);
         });
         return this.afterElmPackage;
     }
 
-    var who = self._findPackageForModule(modname);
+    if (fresh) {
+        this.solver.deps[modname] = this.solver.modname || {};
+        this.solver.deps[modname].uncached = true;
+    }
+    var who = this._findPackageForModule(modname);
     return who._compileIfNeeded([modname],0);
 }
 
@@ -420,7 +438,7 @@ ElmPackage.prototype._linkOne = function(compileOrder,result) {
             return !!compileOrder[m];
         });
 
-        console.log("/* remaining to link for",k,":",o,"*/");
+        self.log("/* remaining to link for",k,":",o,"*/");
 
         if (o.length != 0) {
             continue;
@@ -438,7 +456,7 @@ ElmPackage.prototype._linkOne = function(compileOrder,result) {
             js = who._getModule(m).js;
         } else {
             if (!who._getModule(m).elmo) {
-                console.log("/* Make ELMO",m,"*/");
+                self.log("/* Make ELMO",m,"*/");
                 return who.compileModule(m).then(function() {
                     return self._linkOne(compileOrder,result);
                 });
@@ -459,7 +477,7 @@ ElmPackage.prototype._expandDep = function(mods,i) {
         return q.fcall(function() { });
     }
     var m = mods[i];
-    console.log("/* _expandDep",m,"*/");
+    self.log("/* _expandDep",m,"*/");
     if (!self.solver.have[m]) {
         var ver = self.exactDeps[m];
         var specAr = m.split("/");
@@ -493,7 +511,7 @@ ElmPackage.prototype.link = function(mods) {
         self._collect(compileOrder, k);
     }
     
-    console.log("/*Link:",compileOrder,"*/");
+    self.log("/*Link:",compileOrder,"*/");
     return self._expandDep(Object.keys(self.packageDeps),0).then(function() {
         return self._linkOne(compileOrder, result);
     }).then(function(result) {

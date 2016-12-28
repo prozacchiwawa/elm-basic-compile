@@ -26,7 +26,7 @@ module.exports.justCompile = function(source) {
     });
     var epkg = new ep.ElmPackage(retriever,packageSpec);
     return epkg.expandPackage(["Main"]).then(function(reachable) {
-        return epkg.compileModule("Main");
+        return epkg.compileModule("Main",true);
     }).then(function() {
         return epkg.link(["Main"]);
     }).fail(function(e) {
